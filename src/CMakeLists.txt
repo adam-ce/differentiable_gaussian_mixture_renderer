@@ -23,7 +23,6 @@ endif()
 
 add_library(differentiable_gaussian_mixture_renderer
 	dgmr/forward.h	dgmr/forward.cu
-	dgmr/sibr_api.h	dgmr/sibr_api.cu
 
 )
 target_link_libraries(differentiable_gaussian_mixture_renderer PRIVATE stroke PUBLIC whack)
