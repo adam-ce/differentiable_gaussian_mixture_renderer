@@ -19,6 +19,7 @@
 #include "constants.h"
 #include "splat_forward.h"
 
+#include <stroke/gaussian.h>
 #include <stroke/matrix.h>
 #include <whack/Tensor.h>
 #include <whack/kernel.h>
@@ -181,7 +182,10 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data) {
 	const float focal_y = fb_height / (2.0f * data.tan_fovy);
 	const float focal_x = fb_width / (2.0f * data.tan_fovx);
 
-	const dim3 render_block_dim = { render_block_width, render_block_height };
+	constexpr dim3 render_block_dim = { render_block_width, render_block_height };
+	constexpr auto render_block_size = render_block_width * render_block_height;
+	constexpr auto render_n_warps = render_block_size / 32;
+	static_assert(render_n_warps * 32 == render_block_size);
 	const dim3 render_grid_dim = whack::grid_dim_from_total_size({ data.framebuffer.size<2>(), data.framebuffer.size<1>() }, render_block_dim);
 
 	// geometry buffers, filled by the preprocess pass
@@ -381,20 +385,111 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data) {
 	// render
 	// Let each tile blend its range of Gaussians independently in parallel
 	{
+		// Main rasterization method. Collaboratively works on one tile per
+		// block, each thread treats one pixel. Alternates between fetching
+		// and rasterizing data.
 		auto i_ranges = whack::make_tensor_view(i_ranges_data.device_vector(), render_grid_dim.y, render_grid_dim.x);
 		whack::start_parallel(
-			whack::Location::Device, render_grid_dim, render_block_dim, WHACK_KERNEL(=) {
+			whack::Location::Device, render_grid_dim, render_block_dim, WHACK_DEVICE_KERNEL(=) {
 				WHACK_UNUSED(whack_gridDim);
-				const unsigned p_x = whack_blockIdx.x * whack_blockDim.x + whack_threadIdx.x;
-				const unsigned p_y = whack_blockIdx.y * whack_blockDim.y + whack_threadIdx.y;
-				const auto fb_width = data.framebuffer.size<2>();
-				const auto fb_height = data.framebuffer.size<1>();
-				if (p_x >= fb_width || p_y >= fb_height)
-					return;
-				data.framebuffer(0, p_y, p_x) = float(p_x) / fb_width;
-				data.framebuffer(1, p_y, p_x) = float(p_y) / fb_height;
+				// Identify current tile and associated min/max pixel range.
+				const auto& current_tile_index = whack_blockIdx;
+				const glm::uvec2 pix_min = { whack_blockIdx.x * whack_blockDim.x, whack_blockIdx.y * whack_blockDim.y };
+				const glm::uvec2 pix_max = min(pix_min + glm::uvec2(whack_blockDim.x, whack_blockDim.y), glm::uvec2(fb_width, fb_height));
+				const glm::uvec2 pix = pix_min + glm::uvec2(whack_threadIdx.x, whack_threadIdx.y);
+				const unsigned thread_rank = whack_blockDim.x * whack_threadIdx.y + whack_threadIdx.x;
+
+				// Check if this thread is associated with a valid pixel or outside.
+				bool inside = pix.x < fb_width && pix.y < fb_height;
+				// Done threads can help with fetching, but don't rasterize
+				bool done = !inside;
+
+				//				{
+				//					if (!inside) {
+				//						return;
+				//					}
+				//					data.framebuffer(0, pix.y, pix.x) = float(thread_rank) / render_block_size;
+				//					data.framebuffer(1, pix.y, pix.x) = float(thread_rank) / render_block_size;
+				//					data.framebuffer(2, pix.y, pix.x) = float(thread_rank) / render_block_size;
+				//					return;
+				//				}
+
 				const auto render_g_range = i_ranges(whack_blockIdx.y, whack_blockIdx.x);
-				data.framebuffer(2, p_y, p_x) = (render_g_range.y - render_g_range.x) / 1000.f;
+				const auto n_rounds = ((render_g_range.y - render_g_range.x + render_block_size - 1) / render_block_size);
+				auto n_toDo = render_g_range.y - render_g_range.x;
+
+				// Allocate storage for batches of collectively fetched data.
+				__shared__ int collected_id[render_block_size];
+				__shared__ glm::vec2 collected_xy[render_block_size];
+				__shared__ ConicAndOpacity collected_conic_opacity[render_block_size];
+
+				// Initialize helper variables
+				float T = 1.0f;
+				uint32_t contributor = 0;
+				uint32_t last_contributor = 0;
+				glm::vec3 C = glm::vec3(0);
+
+				// Iterate over batches until all done or range is complete
+				for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {
+					// End if entire block votes that it is done rasterizing
+					int num_done = __syncthreads_count(done);
+					if (num_done == render_block_size)
+						break;
+
+					// Collectively fetch per-Gaussian data from global to shared
+					int progress = i * render_block_size + thread_rank;
+					if (render_g_range.x + progress < render_g_range.y) {
+						unsigned coll_id = b_point_list(render_g_range.x + progress);
+						assert(coll_id < n_gaussians);
+						collected_id[thread_rank] = coll_id;
+						collected_xy[thread_rank] = g_points_xy_image(coll_id);
+						collected_conic_opacity[thread_rank] = g_conic_opacity(coll_id);
+					}
+					// block.sync();
+					__syncthreads();
+
+					// Iterate over current batch
+					for (unsigned j = 0; !done && j < min(render_block_size, n_toDo); j++) {
+						// Keep track of current position in range
+						contributor++;
+
+						// Resample using conic matrix (cf. "Surface Splatting" by Zwicker et al., 2001)
+						const auto g_exp = stroke::gaussian::eval_exponential_inv_C(collected_xy[j], collected_conic_opacity[j].conic, glm::vec2(pix));
+						// Eq. (2) from 3D Gaussian splatting paper.
+						// Obtain alpha by multiplying with Gaussian opacity
+						// and its exponential falloff from mean.
+						// Avoid numerical instabilities (see paper appendix).
+						float alpha = min(0.99f, collected_conic_opacity[j].opacity * g_exp);
+						if (alpha < 1.0f / 255.0f)
+							continue;
+
+						float test_T = T * (1 - alpha);
+						if (test_T < 0.0001f) {
+							done = true;
+							continue;
+						}
+
+						// Eq. (3) from 3D Gaussian splatting paper.
+						C += g_rgb(collected_id[j]) * alpha * T;
+
+						T = test_T;
+
+						// Keep track of last range entry to update this
+						// pixel.
+						last_contributor = contributor;
+					}
+				}
+
+				if (!inside)
+					return;
+				// All threads that treat valid pixel write out their final
+				// rendering data to the frame and auxiliary buffers.if (inside) {
+				//			final_T[pix_id] = T;
+				//			n_contrib[pix_id] = last_contributor;
+				const auto final_colour = C + T * data.background;
+				data.framebuffer(0, pix.y, pix.x) = final_colour.x;
+				data.framebuffer(1, pix.y, pix.x) = final_colour.y;
+				data.framebuffer(2, pix.y, pix.x) = final_colour.z;
 			});
 	}
 
