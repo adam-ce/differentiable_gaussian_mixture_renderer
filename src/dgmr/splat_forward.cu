@@ -226,9 +226,12 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data) {
 				g_tiles_touched(idx) = 0;
 
 				const auto centroid = data.gm_centroids(idx);
+				if ((data.view_matrix * glm::vec4(centroid, 1.f)).z < 0.2) // adam doesn't understand, why the projection matrix and >0 isn't enough.
+					return;
+
 				const auto cov3d = computeCov3D(data.gm_cov_scales(idx), data.cov_scale_multiplier, data.gm_cov_rotations(idx));
 				const auto projected_centroid = project(centroid, data.proj_matrix);
-				if (projected_centroid.z < 0)
+				if (projected_centroid.z < 0.0)
 					return;
 
 				const auto cov2d = computeCov2D(centroid, focal_x, focal_y, data.tan_fovx, data.tan_fovy, cov3d, data.view_matrix);
