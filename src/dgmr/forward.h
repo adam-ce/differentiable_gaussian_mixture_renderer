@@ -19,7 +19,9 @@
 #pragma once
 
 #include <glm/glm.hpp>
+#include <stroke/matrix.h>
 #include <whack/TensorView.h>
+#include <whack/array.h>
 
 namespace dgmr {
 
@@ -27,14 +29,34 @@ struct Statistics {
 	unsigned n_rendered = 0;
 };
 
+template <int D>
+using SHs = whack::Array<glm::vec3, (D + 1) * (D + 1)>;
+
+struct ConicAndOpacity {
+	stroke::SymmetricMat<2, float> conic;
+	float opacity;
+};
+static_assert(sizeof(ConicAndOpacity) == 4 * 4);
+
 struct ForwardData {
-	whack::TensorView<const glm::vec3, 1> centroids;
+	whack::TensorView<const glm::vec3, 1> gm_centroids;
+	whack::TensorView<const SHs<3>, 1> gm_sh_params;
+	whack::TensorView<const float, 1> gm_weights;
+	whack::TensorView<const glm::vec3, 1> gm_cov_scales;
+	whack::TensorView<const glm::vec4, 1> gm_cov_rotations;
+
 	whack::TensorView<float, 3> framebuffer;
 	glm::mat4 view_matrix = glm::mat4(0);
 	glm::mat4 proj_matrix = glm::mat4(0);
 	glm::vec3 cam_poition = glm::vec3(0);
+	glm::vec3 background = glm::vec3(0);
+	int sh_degree = 0;
+	int sh_max_coeffs = 16;
+	float cov_scale_multiplier = 1.f;
+	float tan_fovy = 0.f;
+	float tan_fovx = 0.f;
 };
 
-Statistics forward(const ForwardData& forward_data);
+Statistics forward(ForwardData& forward_data);
 
 }
