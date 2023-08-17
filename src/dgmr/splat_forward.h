@@ -55,6 +55,7 @@ struct SplatForwardData {
 	float cov_scale_multiplier = 1.f;
 	float tan_fovy = 0.f;
 	float tan_fovx = 0.f;
+	bool debug = true;
 };
 
 Statistics splat_forward(SplatForwardData& forward_data);

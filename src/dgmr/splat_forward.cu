@@ -44,6 +44,15 @@ STROKE_DEVICES_INLINE stroke::Cov2<scalar_t> affine_transform_and_cut(const stro
 
 // from inria:
 
+#define CHECK_CUDA(debug)                                                                                              \
+	if (debug) {                                                                                                       \
+		auto ret = cudaDeviceSynchronize();                                                                            \
+		if (ret != cudaSuccess) {                                                                                      \
+			std::cerr << "\n[CUDA ERROR] in " << __FILE__ << "\nLine " << __LINE__ << ": " << cudaGetErrorString(ret); \
+			throw std::runtime_error(cudaGetErrorString(ret));                                                         \
+		}                                                                                                              \
+	}
+
 // Forward method for converting scale and rotation properties of each
 // Gaussian to a 3D covariance matrix in world space. Also takes care
 // of quaternion normalization.
@@ -146,6 +155,23 @@ STROKE_DEVICES_INLINE void getRect(const glm::vec2& p, const glm::ivec2& ext_rec
 		min(render_grid_dim.y, max((int)0, (int)((p.y + ext_rect.y + render_block_height - 1) / render_block_height)))
 	};
 }
+
+// Helper function to find the next-highest bit of the MSB
+// on the CPU.
+uint32_t getHigherMsb(uint32_t n) {
+	uint32_t msb = sizeof(n) * 4;
+	uint32_t step = msb;
+	while (step > 1) {
+		step /= 2;
+		if (n >> msb)
+			msb += step;
+		else
+			msb -= step;
+	}
+	if (n >> msb)
+		msb++;
+	return msb;
+}
 }
 
 dgmr::Statistics dgmr::splat_forward(SplatForwardData& data) {
@@ -236,15 +262,128 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data) {
 				g_conic_opacity(idx) = { conic2d, opacity };
 			});
 	}
+
+	// Compute prefix sum over full list of touched tile counts by Gaussians
+	// E.g., [2, 3, 0, 2, 1] -> [2, 5, 5, 7, 8]
+	auto g_point_offsets_data = whack::make_tensor<uint32_t>(whack::Location::Device, n_gaussians);
+	auto g_point_offsets = g_point_offsets_data.view();
+	{
+		size_t temp_storage_bytes = 0;
+		cub::DeviceScan::InclusiveSum(nullptr, temp_storage_bytes, g_tiles_touched_data.raw_pointer(), g_tiles_touched_data.raw_pointer(), n_gaussians);
+		auto temp_storage = whack::make_tensor<char>(whack::Location::Device, temp_storage_bytes);
+
+		cub::DeviceScan::InclusiveSum(temp_storage.raw_pointer(), temp_storage_bytes, g_tiles_touched_data.raw_pointer(), g_point_offsets_data.raw_pointer(), n_gaussians);
+		CHECK_CUDA(data.debug);
+	}
+
+	const auto n_render_gaussians = unsigned(g_point_offsets_data.device_vector().back());
+	if (n_render_gaussians == 0)
+		return { 0 };
+
+	// For each instance to be rendered, produce adequate [ tile | depth ] key
+	// and corresponding dublicated Gaussian indices to be sorted
+	auto b_point_list_keys_data = whack::make_tensor<uint64_t>(whack::Location::Device, n_render_gaussians);
+	auto b_point_list_keys = b_point_list_keys_data.view();
+	auto b_point_list_data = whack::make_tensor<uint32_t>(whack::Location::Device, n_render_gaussians);
+	auto b_point_list = b_point_list_data.view();
+	{
+		auto b_point_list_keys_unsorted_data = whack::make_tensor<uint64_t>(whack::Location::Device, n_render_gaussians);
+		auto b_point_list_keys_unsorted = b_point_list_keys_unsorted_data.view();
+		auto b_point_list_unsorted_data = whack::make_tensor<uint32_t>(whack::Location::Device, n_render_gaussians);
+		auto b_point_list_unsorted = b_point_list_unsorted_data.view();
+
+		whack::start_parallel( // duplicateWithKeys
+			whack::Location::Device, whack::grid_dim_from_total_size(n_gaussians, 256), 256, WHACK_KERNEL(=) {
+				WHACK_UNUSED(whack_gridDim);
+				const unsigned idx = whack_blockIdx.x * whack_blockDim.x + whack_threadIdx.x;
+				if (idx >= n_gaussians)
+					return;
+
+				// check for invisibility (e.g. outside the frustum)
+				if (g_tiles_touched(idx) == 0)
+					return;
+
+				// Find this Gaussian's offset in buffer for writing keys/values.
+				uint32_t off = (idx == 0) ? 0 : g_point_offsets(idx - 1);
+				glm::uvec2 rect_min, rect_max;
+				getRect(g_points_xy_image(idx), g_rects(idx), &rect_min, &rect_max, render_grid_dim);
+
+				// For each tile that the bounding rect overlaps, emit a
+				// key/value pair. The key is |  tile ID  |      depth      |,
+				// and the value is the ID of the Gaussian. Sorting the values
+				// with this key yields Gaussian IDs in a list, such that they
+				// are first sorted by tile and then by depth.
+				for (unsigned y = rect_min.y; y < rect_max.y; y++) {
+					for (unsigned x = rect_min.x; x < rect_max.x; x++) {
+						uint64_t key = y * render_grid_dim.x + x;
+						key <<= 32;
+						key |= *((uint32_t*)&g_depths(idx)); // take the bits of a float
+
+						b_point_list_keys_unsorted(off) = key;
+						b_point_list_unsorted(off) = idx;
+						off++;
+					}
+				}
+			});
+
+		const int bit = getHigherMsb(render_grid_dim.x * render_grid_dim.y);
+		// Sort complete list of (duplicated) Gaussian indices by keys
+		size_t temp_storage_bytes;
+		cub::DeviceRadixSort::SortPairs(
+			nullptr,
+			temp_storage_bytes,
+			b_point_list_keys_unsorted_data.raw_pointer(), b_point_list_keys_data.raw_pointer(),
+			b_point_list_unsorted_data.raw_pointer(), b_point_list_data.raw_pointer(),
+			n_render_gaussians, 0, 32 + bit);
+		auto temp_storage = whack::make_tensor<char>(whack::Location::Device, temp_storage_bytes);
+		cub::DeviceRadixSort::SortPairs(
+			temp_storage.raw_pointer(),
+			temp_storage_bytes,
+			b_point_list_keys_unsorted_data.raw_pointer(), b_point_list_keys_data.raw_pointer(),
+			b_point_list_unsorted_data.raw_pointer(), b_point_list_data.raw_pointer(),
+			n_render_gaussians, 0, 32 + bit);
+		CHECK_CUDA(data.debug);
+	}
+
+	auto i_ranges_data = whack::make_tensor<glm::uvec2>(whack::Location::Device, render_grid_dim.y * render_grid_dim.x);
+	{
+		auto i_ranges = i_ranges_data.view();
+		thrust::fill(i_ranges_data.device_vector().begin(), i_ranges_data.device_vector().end(), glm::uvec2(0));
+
+		whack::start_parallel( // identifyTileRanges
+			whack::Location::Device, whack::grid_dim_from_total_size(n_render_gaussians, 256), 256, WHACK_KERNEL(=) {
+				WHACK_UNUSED(whack_gridDim);
+				const unsigned idx = whack_blockIdx.x * whack_blockDim.x + whack_threadIdx.x;
+				if (idx >= n_render_gaussians)
+					return;
+
+				// Read tile ID from key. Update start/end of tile range if at limit.
+				uint64_t key = b_point_list_keys(idx);
+				uint32_t currtile = key >> 32;
+				if (idx == 0)
+					i_ranges(currtile).x = 0;
+				else {
+					uint32_t prevtile = b_point_list_keys(idx - 1) >> 32;
+					if (currtile != prevtile) {
+						i_ranges(prevtile).y = idx;
+						i_ranges(currtile).x = idx;
+					}
+				}
+				if (idx == n_render_gaussians - 1)
+					i_ranges(currtile).y = n_render_gaussians;
+			});
+	}
+
 	// next steps:
-	// 1. port sorting / rect / tiling calc
 	// 2. draw something out of them for debug..
 	// 3. properly port render pass
 
 	// render
+	// Let each tile blend its range of Gaussians independently in parallel
 	{
+		auto i_ranges = whack::make_tensor_view(i_ranges_data.device_vector(), render_grid_dim.y, render_grid_dim.x);
 		whack::start_parallel(
-			whack::Location::Device, render_grid_dim, render_block_dim, WHACK_KERNEL(data) {
+			whack::Location::Device, render_grid_dim, render_block_dim, WHACK_KERNEL(=) {
 				WHACK_UNUSED(whack_gridDim);
 				const unsigned p_x = whack_blockIdx.x * whack_blockDim.x + whack_threadIdx.x;
 				const unsigned p_y = whack_blockIdx.y * whack_blockDim.y + whack_threadIdx.y;
@@ -254,7 +393,8 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data) {
 					return;
 				data.framebuffer(0, p_y, p_x) = float(p_x) / fb_width;
 				data.framebuffer(1, p_y, p_x) = float(p_y) / fb_height;
-				data.framebuffer(2, p_y, p_x) = 1.0;
+				const auto render_g_range = i_ranges(whack_blockIdx.y, whack_blockIdx.x);
+				data.framebuffer(2, p_y, p_x) = (render_g_range.y - render_g_range.x) / 1000.f;
 			});
 	}
 
