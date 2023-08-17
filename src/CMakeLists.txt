@@ -34,7 +34,7 @@ else()
 endif()
 
 add_library(differentiable_gaussian_mixture_renderer
-	dgmr/forward.h	dgmr/forward.cu
+	dgmr/splat_forward.h	dgmr/splat_forward.cu
 	dgmr/constants.h
 
 )

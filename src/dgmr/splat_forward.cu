@@ -17,7 +17,7 @@
  *****************************************************************************/
 
 #include "constants.h"
-#include "forward.h"
+#include "splat_forward.h"
 
 #include <stroke/matrix.h>
 #include <whack/Tensor.h>
@@ -148,7 +148,7 @@ STROKE_DEVICES_INLINE void getRect(const glm::vec2& p, const glm::ivec2& ext_rec
 }
 }
 
-dgmr::Statistics dgmr::forward(ForwardData& data) {
+dgmr::Statistics dgmr::splat_forward(SplatForwardData& data) {
 	const auto fb_width = data.framebuffer.size<2>();
 	const auto fb_height = data.framebuffer.size<1>();
 	const auto n_gaussians = data.gm_weights.size<0>();

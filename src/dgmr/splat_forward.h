@@ -38,7 +38,7 @@ struct ConicAndOpacity {
 };
 static_assert(sizeof(ConicAndOpacity) == 4 * 4);
 
-struct ForwardData {
+struct SplatForwardData {
 	whack::TensorView<const glm::vec3, 1> gm_centroids;
 	whack::TensorView<const SHs<3>, 1> gm_sh_params;
 	whack::TensorView<const float, 1> gm_weights;
@@ -57,6 +57,5 @@ struct ForwardData {
 	float tan_fovx = 0.f;
 };
 
-Statistics forward(ForwardData& forward_data);
-
+Statistics splat_forward(SplatForwardData& forward_data);
 }
