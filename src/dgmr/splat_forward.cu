@@ -235,10 +235,20 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data) {
 				if (projected_centroid.z < 0.0)
 					return;
 
-				const auto cov2d = computeCov2D(centroid, focal_x, focal_y, data.tan_fovx, data.tan_fovy, cov3d, data.view_matrix);
+				auto cov2d = computeCov2D(centroid, focal_x, focal_y, data.tan_fovx, data.tan_fovy, cov3d, data.view_matrix);
 
-				// todo: anti aliasing
-				const auto opacity = data.gm_weights(idx);
+				// anti aliasing:
+				// Apply low-pass filter: convolve with a gaussian with variance 0.3, i.e. every Gaussian should be at least
+				// one pixel wide/high.
+				auto opacity = data.gm_weights(idx);
+				{
+					constexpr float h_var = 0.3f;
+					const auto pre_filter_det = det(cov2d);
+					cov2d += stroke::Cov2<float>(h_var);
+					const auto post_filter_det = det(cov2d);
+					// gaussians are not normalised, we need this additional factor. without it, we would produce energy on small gaussians.
+					opacity *= sqrt(max(0.000025f, pre_filter_det / post_filter_det));
+				}
 
 				// using the more aggressive computation for calculating overlapping tiles:
 				{
