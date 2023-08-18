@@ -135,14 +135,15 @@ STROKE_DEVICES_INLINE stroke::Cov2<float> computeCov2D(const glm::vec3& mean, fl
 	t.x = min(limx, max(-limx, txtz)) * t.z;
 	t.y = min(limy, max(-limy, tytz)) * t.z;
 
+	// adam does not understand, why the last row is 0, and how aspect / scaling considerations work.
+	// glm is column major, the first 3 elements are the first column..
 	glm::mat3 J = glm::mat3(
-		focal_x / t.z, 0.0f, -(focal_x * t.x) / (t.z * t.z),
-		0.0f, focal_y / t.z, -(focal_y * t.y) / (t.z * t.z),
-		0, 0, 0);
+		glm::mat3::col_type(focal_x / t.z, 0.0f, 0.f),
+		glm::mat3::col_type(0.0f, focal_y / t.z, 0.f),
+		glm::mat3::col_type(-(focal_x * t.x) / (t.z * t.z), -(focal_y * t.y) / (t.z * t.z), 0.f));
 
 	glm::mat3 W = glm::mat3(viewmatrix);
-
-	glm::mat3 T = W * J;
+	glm::mat3 T = J * W;
 	return affine_transform_and_cut(cov3D, T);
 }
 
@@ -226,7 +227,7 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data) {
 				g_tiles_touched(idx) = 0;
 
 				const auto centroid = data.gm_centroids(idx);
-				if ((data.view_matrix * glm::vec4(centroid, 1.f)).z < 0.2) // adam doesn't understand, why the projection matrix and >0 isn't enough.
+				if ((data.view_matrix * glm::vec4(centroid, 1.f)).z < 0.2) // adam doesn't understand, why projection matrix > 0 isn't enough.
 					return;
 
 				const auto cov3d = computeCov3D(data.gm_cov_scales(idx), data.cov_scale_multiplier, data.gm_cov_rotations(idx));
