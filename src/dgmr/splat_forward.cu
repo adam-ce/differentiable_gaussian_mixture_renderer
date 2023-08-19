@@ -392,10 +392,6 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data) {
 			});
 	}
 
-	// next steps:
-	// 2. draw something out of them for debug..
-	// 3. properly port render pass
-
 	// render
 	// Let each tile blend its range of Gaussians independently in parallel
 	{
@@ -417,16 +413,6 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data) {
 				bool inside = pix.x < fb_width && pix.y < fb_height;
 				// Done threads can help with fetching, but don't rasterize
 				bool done = !inside;
-
-				//				{
-				//					if (!inside) {
-				//						return;
-				//					}
-				//					data.framebuffer(0, pix.y, pix.x) = float(thread_rank) / render_block_size;
-				//					data.framebuffer(1, pix.y, pix.x) = float(thread_rank) / render_block_size;
-				//					data.framebuffer(2, pix.y, pix.x) = float(thread_rank) / render_block_size;
-				//					return;
-				//				}
 
 				const auto render_g_range = i_ranges(whack_blockIdx.y, whack_blockIdx.x);
 				const auto n_rounds = ((render_g_range.y - render_g_range.x + render_block_size - 1) / render_block_size);
