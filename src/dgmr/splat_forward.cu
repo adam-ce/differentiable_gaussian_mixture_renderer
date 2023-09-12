@@ -425,8 +425,6 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data) {
 
 				// Initialize helper variables
 				float T = 1.0f;
-				uint32_t contributor = 0;
-				uint32_t last_contributor = 0;
 				glm::vec3 C = glm::vec3(0);
 
 				// Iterate over batches until all done or range is complete
@@ -448,10 +446,11 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data) {
 					// block.sync();
 					__syncthreads();
 
+					if (done)
+						continue;
+
 					// Iterate over current batch
-					for (unsigned j = 0; !done && j < min(render_block_size, n_toDo); j++) {
-						// Keep track of current position in range
-						contributor++;
+					for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
 
 						// Resample using conic matrix (cf. "Surface Splatting" by Zwicker et al., 2001)
 						const auto g_exp = stroke::gaussian::eval_exponential_inv_C(collected_xy[j], collected_conic_opacity[j].conic, glm::vec2(pix));
@@ -466,17 +465,13 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data) {
 						float test_T = T * (1 - alpha);
 						if (test_T < 0.0001f) {
 							done = true;
-							continue;
+							break;
 						}
 
 						// Eq. (3) from 3D Gaussian splatting paper.
 						C += g_rgb(collected_id[j]) * alpha * T;
 
 						T = test_T;
-
-						// Keep track of last range entry to update this
-						// pixel.
-						last_contributor = contributor;
 					}
 				}
 
