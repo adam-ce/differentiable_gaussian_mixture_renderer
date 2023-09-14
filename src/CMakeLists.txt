@@ -35,6 +35,7 @@ endif()
 
 add_library(differentiable_gaussian_mixture_renderer
 	dgmr/splat_forward.h	dgmr/splat_forward.cu
+    dgmr/vol_raster_forward.h	dgmr/vol_raster_forward.cu
 	dgmr/constants.h
 
 )
