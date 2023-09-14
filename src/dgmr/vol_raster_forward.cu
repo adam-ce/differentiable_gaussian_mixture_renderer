@@ -213,6 +213,9 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 	auto g_conic_opacity_data = whack::make_tensor<ConicAndOpacity>(whack::Location::Device, n_gaussians);
 	auto g_conic_opacity = g_conic_opacity_data.view();
 
+	auto g_cov3d_data = whack::make_tensor<stroke::Cov3<float>>(whack::Location::Device, n_gaussians);
+	auto g_cov3d = g_cov3d_data.view();
+
 	auto g_tiles_touched_data = whack::make_tensor<uint32_t>(whack::Location::Device, n_gaussians);
 	auto g_tiles_touched = g_tiles_touched_data.view();
 
@@ -283,6 +286,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 				// Inverse 2D covariance and opacity neatly pack into one float4
 				const auto conic2d = inverse(cov2d);
 				g_conic_opacity(idx) = { conic2d, opacity };
+				g_cov3d(idx) = cov3d;
 			});
 	}
 
@@ -412,6 +416,8 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 				const glm::uvec2 pix_min = { whack_blockIdx.x * whack_blockDim.x, whack_blockIdx.y * whack_blockDim.y };
 				const glm::uvec2 pix_max = min(pix_min + glm::uvec2(whack_blockDim.x, whack_blockDim.y), glm::uvec2(fb_width, fb_height));
 				const glm::uvec2 pix = pix_min + glm::uvec2(whack_threadIdx.x, whack_threadIdx.y);
+				const glm::vec2 pix_ndc = glm::vec2(pix) / glm::vec2(fb_width, fb_height);
+				const auto ray = stroke::Ray<3, float>(); // todo
 				const unsigned thread_rank = whack_blockDim.x * whack_threadIdx.y + whack_threadIdx.x;
 
 				// Check if this thread is associated with a valid pixel or outside.
@@ -425,12 +431,11 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 
 				// Allocate storage for batches of collectively fetched data.
 				__shared__ int collected_id[render_block_size];
-				__shared__ glm::vec2 collected_xy[render_block_size];
-				__shared__ ConicAndOpacity collected_conic_opacity[render_block_size];
+				__shared__ float collected_weight[render_block_size];
+				__shared__ glm::vec3 collected_centroid[render_block_size];
+				__shared__ stroke::Cov3<float> collected_cov3[render_block_size];
 
-				// Initialize helper variables
-				float T = 1.0f;
-				glm::vec3 C = glm::vec3(0);
+				whack::Array<glm::vec4, vol_raster::config::n_rasterisation_steps> rasterised_data = {};
 
 				// Iterate over batches until all done or range is complete
 				for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {
@@ -445,8 +450,9 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 						unsigned coll_id = b_point_list(render_g_range.x + progress);
 						assert(coll_id < n_gaussians);
 						collected_id[thread_rank] = coll_id;
-						collected_xy[thread_rank] = g_points_xy_image(coll_id);
-						collected_conic_opacity[thread_rank] = g_conic_opacity(coll_id);
+						collected_weight[thread_rank] = data.gm_weights(coll_id);
+						collected_centroid[thread_rank] = data.gm_centroids(coll_id);
+						collected_cov3[thread_rank] = g_cov3d(coll_id);
 					}
 					// block.sync();
 					__syncthreads();
@@ -456,36 +462,46 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 
 					// Iterate over current batch
 					for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
-
-						// Resample using conic matrix (cf. "Surface Splatting" by Zwicker et al., 2001)
-						const auto g_exp = stroke::gaussian::eval_exponential_inv_C(collected_xy[j], collected_conic_opacity[j].conic, glm::vec2(pix));
-						// Eq. (2) from 3D Gaussian splatting paper.
-						// Obtain alpha by multiplying with Gaussian opacity
-						// and its exponential falloff from mean.
-						// Avoid numerical instabilities (see paper appendix).
-						float alpha = min(0.99f, collected_conic_opacity[j].opacity * g_exp);
-						if (alpha < 1.0f / 255.0f)
-							continue;
-
-						float test_T = T * (1 - alpha);
-						if (test_T < 0.0001f) {
-							done = true;
-							break;
+						const auto gaussian1d = stroke::gaussian::project_on_ray(collected_centroid[j], collected_cov3[j], ray);
+						const auto weight = gaussian1d.weight * collected_weight[j];
+						const auto delta = data.max_depth / vol_raster::config::n_rasterisation_steps;
+						for (auto k = 0; k < vol_raster::config::n_rasterisation_steps; ++k) {
+							const auto current_start = k * delta;
+							const auto current_end = current_start + delta;
+							const auto integrated = stroke::gaussian::integrate(weight, gaussian1d.centre, gaussian1d.C); // todo
+							rasterised_data[k] += glm::vec4(g_rgb(collected_id[j]) * integrated, integrated);
 						}
-
-						// Eq. (3) from 3D Gaussian splatting paper.
-						C += g_rgb(collected_id[j]) * alpha * T;
-
-						T = test_T;
 					}
+				}
+
+				// blend
+				float T = 1.0f;
+				glm::vec3 C = glm::vec3(0);
+				for (auto k = 0; k < vol_raster::config::n_rasterisation_steps; ++k) {
+					auto current_bin = rasterised_data[k];
+					for (auto i = 0; i < 3; ++i) {
+						current_bin[i] /= current_bin[3]; // make an weighted average out of a weighted sum
+					}
+					// Avoid numerical instabilities (see paper appendix).
+					float alpha = min(0.99f, current_bin[3]);
+					if (alpha < 1.0f / 255.0f)
+						continue;
+
+					float test_T = T * (1 - alpha);
+					if (test_T < 0.0001f) {
+						done = true;
+						break;
+					}
+
+					// Eq. (3) from 3D Gaussian splatting paper.
+					C += glm::vec3(current_bin) * alpha * T;
+
+					T = test_T;
 				}
 
 				if (!inside)
 					return;
 				// All threads that treat valid pixel write out their final
-				// rendering data to the frame and auxiliary buffers.if (inside) {
-				//			final_T[pix_id] = T;
-				//			n_contrib[pix_id] = last_contributor;
 				const auto final_colour = C + T * data.background;
 				data.framebuffer(0, pix.y, pix.x) = final_colour.x;
 				data.framebuffer(1, pix.y, pix.x) = final_colour.y;
