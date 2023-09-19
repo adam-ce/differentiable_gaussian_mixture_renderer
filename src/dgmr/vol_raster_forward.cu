@@ -407,6 +407,9 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 		// Main rasterization method. Collaboratively works on one tile per
 		// block, each thread treats one pixel. Alternates between fetching
 		// and rasterizing data.
+
+		const auto inversed_projectin_matrix = glm::inverse(data.proj_matrix);
+
 		auto i_ranges = whack::make_tensor_view(i_ranges_data.device_vector(), render_grid_dim.y, render_grid_dim.x);
 		whack::start_parallel(
 			whack::Location::Device, render_grid_dim, render_block_dim, WHACK_DEVICE_KERNEL(=) {
@@ -416,8 +419,11 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 				const glm::uvec2 pix_min = { whack_blockIdx.x * whack_blockDim.x, whack_blockIdx.y * whack_blockDim.y };
 				const glm::uvec2 pix_max = min(pix_min + glm::uvec2(whack_blockDim.x, whack_blockDim.y), glm::uvec2(fb_width, fb_height));
 				const glm::uvec2 pix = pix_min + glm::uvec2(whack_threadIdx.x, whack_threadIdx.y);
-				const glm::vec2 pix_ndc = glm::vec2(pix) / glm::vec2(fb_width, fb_height);
-				const auto ray = stroke::Ray<3, float>(); // todo
+				const glm::vec2 pix_ndc = glm::vec2(pix * glm::uvec2(2)) / glm::vec2(fb_width, fb_height) - glm::vec2(1);
+				auto view_at_world = inversed_projectin_matrix * glm::vec4(pix_ndc, -1, 1.0);
+				view_at_world /= view_at_world.w;
+
+				const auto ray = stroke::Ray<3, float> { data.cam_poition, glm::normalize(glm::vec3(view_at_world) - data.cam_poition) }; // todo
 				const unsigned thread_rank = whack_blockDim.x * whack_threadIdx.y + whack_threadIdx.x;
 
 				// Check if this thread is associated with a valid pixel or outside.
@@ -462,14 +468,20 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 
 					// Iterate over current batch
 					for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
-						const auto gaussian1d = stroke::gaussian::project_on_ray(collected_centroid[j], collected_cov3[j], ray);
+						const auto distance = glm::distance(collected_centroid[j], ray.origin);
+
+						// todo proper convolution  -> kernel size based on camera distance (projected pixel size to gaussian distance)
+						//                             and scale weight
+						const auto gaussian1d = stroke::gaussian::project_on_ray(collected_centroid[j], collected_cov3[j] + stroke::Cov3<float>(distance / 1000), ray);
 						const auto weight = gaussian1d.weight * collected_weight[j];
+
 						const auto delta = data.max_depth / vol_raster::config::n_rasterisation_steps;
 						for (auto k = 0; k < vol_raster::config::n_rasterisation_steps; ++k) {
 							const auto current_start = k * delta;
 							const auto current_end = current_start + delta;
-							const auto integrated = stroke::gaussian::integrate(weight, gaussian1d.centre, gaussian1d.C); // todo
-							rasterised_data[k] += glm::vec4(g_rgb(collected_id[j]) * integrated, integrated);
+							const auto integrated = stroke::gaussian::integrate(gaussian1d.centre, gaussian1d.C, { current_start, current_end }) * weight * stroke::gaussian::norm_factor(gaussian1d.C);
+							if (integrated > 0 && integrated < 100'000)
+								rasterised_data[k] += glm::vec4(g_rgb(collected_id[j]) * integrated, integrated);
 						}
 					}
 				}
@@ -480,7 +492,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 				for (auto k = 0; k < vol_raster::config::n_rasterisation_steps; ++k) {
 					auto current_bin = rasterised_data[k];
 					for (auto i = 0; i < 3; ++i) {
-						current_bin[i] /= current_bin[3]; // make an weighted average out of a weighted sum
+						current_bin[i] /= current_bin[3] + 0.01f; // make an weighted average out of a weighted sum
 					}
 					// Avoid numerical instabilities (see paper appendix).
 					float alpha = min(0.99f, current_bin[3]);
