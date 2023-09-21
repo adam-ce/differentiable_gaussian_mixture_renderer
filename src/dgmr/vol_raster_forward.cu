@@ -473,7 +473,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 						// todo proper convolution  -> kernel size based on camera distance (projected pixel size to gaussian distance)
 						//                             and scale weight
 						const auto gaussian1d = stroke::gaussian::project_on_ray(collected_centroid[j], collected_cov3[j] + stroke::Cov3<float>(0.00001f * distance), ray);
-						const auto weight = gaussian1d.weight * collected_weight[j] * stroke::gaussian::norm_factor(gaussian1d.C);
+						const auto weight = gaussian1d.weight * collected_weight[j];
 						if (!(weight >= 0 && weight < 100'000)) {
 							const auto& C3 = collected_cov3[j];
 							printf("gaussian1d.C: %f, collected_cov3[j]: %f/%f/%f/%f/%f/%f, det: %f\n", gaussian1d.C, C3[0], C3[1], C3[2], C3[3], C3[4], C3[5], det(C3 + stroke::Cov3<float>(0.001f * distance)));
@@ -505,7 +505,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 							current_bin[i] /= current_bin[3] + 0.01f; // make an weighted average out of a weighted sum
 						}
 						// Avoid numerical instabilities (see paper appendix).
-						float alpha = min(0.99f, current_bin[3] / (render_g_range.y - render_g_range.x));
+						float alpha = min(0.99f, current_bin[3]);
 						if (alpha < 1.0f / 255.0f)
 							continue;
 
