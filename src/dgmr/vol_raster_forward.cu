@@ -423,7 +423,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 				auto view_at_world = inversed_projectin_matrix * glm::vec4(pix_ndc, -1, 1.0);
 				view_at_world /= view_at_world.w;
 
-				const auto ray = stroke::Ray<3, float> { data.cam_poition, glm::normalize(glm::vec3(view_at_world) - data.cam_poition) }; // todo
+				const auto ray = stroke::Ray<3, float> { data.cam_poition, glm::normalize(glm::vec3(view_at_world) - data.cam_poition) };
 				const unsigned thread_rank = whack_blockDim.x * whack_threadIdx.y + whack_threadIdx.x;
 
 				// Check if this thread is associated with a valid pixel or outside.
@@ -472,16 +472,25 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 
 						// todo proper convolution  -> kernel size based on camera distance (projected pixel size to gaussian distance)
 						//                             and scale weight
-						const auto gaussian1d = stroke::gaussian::project_on_ray(collected_centroid[j], collected_cov3[j] + stroke::Cov3<float>(distance / 1000), ray);
-						const auto weight = gaussian1d.weight * collected_weight[j];
+						const auto gaussian1d = stroke::gaussian::project_on_ray(collected_centroid[j], collected_cov3[j] + stroke::Cov3<float>(0.00001f * distance), ray);
+						const auto weight = gaussian1d.weight * collected_weight[j] * stroke::gaussian::norm_factor(gaussian1d.C);
+						if (!(weight >= 0 && weight < 100'000)) {
+							const auto& C3 = collected_cov3[j];
+							printf("gaussian1d.C: %f, collected_cov3[j]: %f/%f/%f/%f/%f/%f, det: %f\n", gaussian1d.C, C3[0], C3[1], C3[2], C3[3], C3[4], C3[5], det(C3 + stroke::Cov3<float>(0.001f * distance)));
+							//							printf("weight: %f, gaussian1d.weight: %f, collected_weight[j]: %f, stroke::gaussian::norm_factor(gaussian1d.C): %f, gaussian1d.C: %f\n", weight, gaussian1d.weight, collected_weight[j], stroke::gaussian::norm_factor(gaussian1d.C), gaussian1d.C);
+						}
+						if (weight == 0)
+							continue;
 
 						const auto delta = data.max_depth / vol_raster::config::n_rasterisation_steps;
 						for (auto k = 0; k < vol_raster::config::n_rasterisation_steps; ++k) {
 							const auto current_start = k * delta;
 							const auto current_end = current_start + delta;
-							const auto integrated = stroke::gaussian::integrate(gaussian1d.centre, gaussian1d.C, { current_start, current_end }) * weight * stroke::gaussian::norm_factor(gaussian1d.C);
-							if (integrated > 0 && integrated < 100'000)
+							const auto integrated = stroke::gaussian::integrate_fast(gaussian1d.centre, gaussian1d.C, { current_start, current_end }) * weight;
+							if (integrated >= 0 && integrated < 100'000)
 								rasterised_data[k] += glm::vec4(g_rgb(collected_id[j]) * integrated, integrated);
+							//							else
+							//								printf("integrated: %f, weight: %f\n", integrated, weight);
 						}
 					}
 				}
@@ -489,23 +498,35 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 				// blend
 				float T = 1.0f;
 				glm::vec3 C = glm::vec3(0);
-				for (auto k = 0; k < vol_raster::config::n_rasterisation_steps; ++k) {
-					auto current_bin = rasterised_data[k];
+				if (data.debug_render_bin == -1) {
+					for (auto k = 0; k < vol_raster::config::n_rasterisation_steps; ++k) {
+						auto current_bin = rasterised_data[k];
+						for (auto i = 0; i < 3; ++i) {
+							current_bin[i] /= current_bin[3] + 0.01f; // make an weighted average out of a weighted sum
+						}
+						// Avoid numerical instabilities (see paper appendix).
+						float alpha = min(0.99f, current_bin[3] / (render_g_range.y - render_g_range.x));
+						if (alpha < 1.0f / 255.0f)
+							continue;
+
+						float test_T = T * (1 - alpha);
+						if (test_T < 0.0001f) {
+							done = true;
+							break;
+						}
+
+						// Eq. (3) from 3D Gaussian splatting paper.
+						C += glm::vec3(current_bin) * alpha * T;
+
+						T = test_T;
+					}
+				} else {
+					auto current_bin = rasterised_data[data.debug_render_bin];
 					for (auto i = 0; i < 3; ++i) {
 						current_bin[i] /= current_bin[3] + 0.01f; // make an weighted average out of a weighted sum
 					}
-					// Avoid numerical instabilities (see paper appendix).
 					float alpha = min(0.99f, current_bin[3]);
-					if (alpha < 1.0f / 255.0f)
-						continue;
-
 					float test_T = T * (1 - alpha);
-					if (test_T < 0.0001f) {
-						done = true;
-						break;
-					}
-
-					// Eq. (3) from 3D Gaussian splatting paper.
 					C += glm::vec3(current_bin) * alpha * T;
 
 					T = test_T;

@@ -49,13 +49,14 @@ struct VolRasterForwardData {
 	float cov_scale_multiplier = 1.f;
 	float tan_fovy = 0.f;
 	float tan_fovx = 0.f;
-	float max_depth = 450.f;
+	float max_depth = 20.f;
 	bool debug = true;
+	int debug_render_bin = -1;
 };
 
 namespace vol_raster {
 namespace config {
-constexpr unsigned n_rasterisation_steps = 8;
+constexpr unsigned n_rasterisation_steps = 16;
 }
 }
 
