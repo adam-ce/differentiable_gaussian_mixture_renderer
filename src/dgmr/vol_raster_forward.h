@@ -56,7 +56,7 @@ struct VolRasterForwardData {
 
 namespace vol_raster {
 namespace config {
-constexpr unsigned n_rasterisation_steps = 16;
+constexpr unsigned n_rasterisation_steps = 8;
 }
 }
 
