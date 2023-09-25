@@ -25,12 +25,16 @@ if(AUTOUPDATE_STROKE_LIBRARY)
     )
     FetchContent_MakeAvailable(stroke)
 else()
-    FetchContent_Declare(stroke
-        GIT_REPOSITORY  git@github.com:cg-tuwien/cuda_stroke.git
-        GIT_TAG         main
-        SOURCE_DIR      ${CMAKE_SOURCE_DIR}/3rdparty/stroke
-    )
-    FetchContent_MakeAvailable(stroke)
+    if (NOT EXISTS ${CMAKE_SOURCE_DIR}/3rdparty/stroke)
+        FetchContent_Declare(stroke
+            GIT_REPOSITORY  git@github.com:cg-tuwien/cuda_stroke.git
+            GIT_TAG         main
+            SOURCE_DIR      ${CMAKE_SOURCE_DIR}/3rdparty/stroke
+        )
+        FetchContent_MakeAvailable(stroke)
+    else()
+        add_subdirectory(${CMAKE_SOURCE_DIR}/3rdparty/stroke ${CMAKE_BINARY_DIR}/_deps/stroke-build)
+    endif()
 endif()
 
 add_library(differentiable_gaussian_mixture_renderer
