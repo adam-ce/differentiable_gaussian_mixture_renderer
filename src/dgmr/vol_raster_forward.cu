@@ -478,8 +478,8 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 						const auto gaussian1d = gaussian::project_on_ray(collected_centroid[j], collected_cov3[j], ray);
 						const auto weight = gaussian1d.weight * collected_weight[j];
 						opacity += weight;
+						max_distance = gaussian1d.centre + stroke::sqrt(gaussian1d.C) * 3.f;
 						if (opacity > 1) {
-							max_distance = gaussian1d.centre + stroke::sqrt(gaussian1d.C) * 2.f;
 							done = true;
 							break;
 						}
