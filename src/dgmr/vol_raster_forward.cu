@@ -26,6 +26,7 @@
 
 namespace {
 using namespace dgmr;
+namespace gaussian = stroke::gaussian;
 
 // my own:
 STROKE_DEVICES glm::vec3 project(const glm::vec3& point, const glm::mat4& projection_matrix) {
@@ -457,8 +458,13 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 						assert(coll_id < n_gaussians);
 						collected_id[thread_rank] = coll_id;
 						collected_weight[thread_rank] = data.gm_weights(coll_id);
-						collected_centroid[thread_rank] = data.gm_centroids(coll_id);
-						collected_cov3[thread_rank] = g_cov3d(coll_id);
+
+						// todo filtering convolution  -> kernel size based on camera distance (projected pixel size to gaussian distance)
+						//                                and scale weight
+						const auto centroid = data.gm_centroids(coll_id);
+						collected_centroid[thread_rank] = centroid;
+						const auto distance = glm::distance(centroid, ray.origin);
+						collected_cov3[thread_rank] = g_cov3d(coll_id) + stroke::Cov3<float>(0.00001f + 0.000005f * distance);
 					}
 					// block.sync();
 					__syncthreads();
@@ -468,26 +474,27 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 
 					// Iterate over current batch
 					for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
-						const auto distance = glm::distance(collected_centroid[j], ray.origin);
 
-						// todo proper convolution  -> kernel size based on camera distance (projected pixel size to gaussian distance)
-						//                             and scale weight
-						const auto gaussian1d = stroke::gaussian::project_on_ray(collected_centroid[j], collected_cov3[j] + stroke::Cov3<float>(0.00001f * distance), ray);
+						const auto gaussian1d = gaussian::project_on_ray(collected_centroid[j], collected_cov3[j], ray);
+						const auto inv_variance = 1 / gaussian1d.C;
 						const auto weight = gaussian1d.weight * collected_weight[j];
 						if (!(weight >= 0 && weight < 100'000)) {
 							const auto& C3 = collected_cov3[j];
-							printf("gaussian1d.C: %f, collected_cov3[j]: %f/%f/%f/%f/%f/%f, det: %f\n", gaussian1d.C, C3[0], C3[1], C3[2], C3[3], C3[4], C3[5], det(C3 + stroke::Cov3<float>(0.001f * distance)));
+							printf("gaussian1d.C: %f, collected_cov3[j]: %f/%f/%f/%f/%f/%f, det: %f\n", gaussian1d.C, C3[0], C3[1], C3[2], C3[3], C3[4], C3[5], det(C3));
 							//							printf("weight: %f, gaussian1d.weight: %f, collected_weight[j]: %f, stroke::gaussian::norm_factor(gaussian1d.C): %f, gaussian1d.C: %f\n", weight, gaussian1d.weight, collected_weight[j], stroke::gaussian::norm_factor(gaussian1d.C), gaussian1d.C);
 						}
 						if (weight <= 0.001f) // performance critical
 							continue;
 
 						const auto delta = data.max_depth / vol_raster::config::n_rasterisation_steps;
+						auto cdf_start = gaussian::cdf_inv_C(gaussian1d.centre, inv_variance, 0.f);
 						for (auto k = 0; k < vol_raster::config::n_rasterisation_steps; ++k) {
-							const auto current_start = k * delta;
-							const auto current_end = current_start + delta;
+							//							const auto current_start = k * delta;
+							const auto current_end = (k + 1) * delta;
+							const auto cdf_end = gaussian::cdf_inv_C(gaussian1d.centre, inv_variance, current_end);
+							const auto integrated = (cdf_end - cdf_start) * weight;
+							cdf_start = cdf_end;
 							if (integrated >= 0.0001f && integrated < 100'000)
-							const auto integrated = stroke::gaussian::integrate_fast(gaussian1d.centre, gaussian1d.C, { current_start, current_end }) * weight;
 								rasterised_data[k] += glm::vec4(g_rgb(collected_id[j]) * integrated, integrated);
 							//							else
 							//								printf("integrated: %f, weight: %f\n", integrated, weight);
