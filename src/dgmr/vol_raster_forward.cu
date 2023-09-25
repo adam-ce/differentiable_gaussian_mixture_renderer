@@ -522,8 +522,9 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 					for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
 
 						const auto gaussian1d = gaussian::project_on_ray(collected_centroid[j], collected_cov3[j], ray);
-						const auto inv_variance = 1 / gaussian1d.C;
 						const auto weight = gaussian1d.weight * collected_weight[j];
+						if (gaussian1d.C <= 0)
+							continue; // todo: shouldn't happen any more in the future, after implementing AA
 						if (!(weight >= 0 && weight < 100'000)) {
 							const auto& C3 = collected_cov3[j];
 							printf("gaussian1d.C: %f, collected_cov3[j]: %f/%f/%f/%f/%f/%f, det: %f\n", gaussian1d.C, C3[0], C3[1], C3[2], C3[3], C3[4], C3[5], det(C3));
@@ -532,6 +533,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 						if (weight <= 0.001f) // performance critical
 							continue;
 
+						const auto inv_variance = 1 / gaussian1d.C;
 						const auto delta = max_distance / vol_raster::config::n_rasterisation_steps;
 						auto cdf_start = gaussian::cdf_inv_C(gaussian1d.centre, inv_variance, 0.f);
 						for (auto k = 0; k < vol_raster::config::n_rasterisation_steps; ++k) {
@@ -540,10 +542,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 							const auto cdf_end = gaussian::cdf_inv_C(gaussian1d.centre, inv_variance, current_end);
 							const auto integrated = (cdf_end - cdf_start) * weight;
 							cdf_start = cdf_end;
-							if (integrated >= 0.0001f && integrated < 100'000)
-								rasterised_data[k] += glm::vec4(g_rgb(collected_id[j]) * integrated, integrated);
-							//							else
-							//								printf("integrated: %f, weight: %f\n", integrated, weight);
+							rasterised_data[k] += glm::vec4(g_rgb(collected_id[j]) * integrated, integrated);
 						}
 
 						opacity += weight;
