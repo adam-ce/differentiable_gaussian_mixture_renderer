@@ -443,16 +443,61 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 				__shared__ stroke::Cov3<float> collected_cov3[render_block_size];
 
 				whack::Array<glm::vec4, vol_raster::config::n_rasterisation_steps> rasterised_data = {};
+				float max_distance = 0;
+				float max_dist_estimation_opacity = 0;
 
-				// Iterate over batches until all done or range is complete
+				// Iterate over batches until all done or range is complete: compute max depth
 				for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {
 					// End if entire block votes that it is done rasterizing
-					int num_done = __syncthreads_count(done);
+					const int num_done = __syncthreads_count(done);
 					if (num_done == render_block_size)
 						break;
 
 					// Collectively fetch per-Gaussian data from global to shared
-					int progress = i * render_block_size + thread_rank;
+					const int progress = i * render_block_size + thread_rank;
+					if (render_g_range.x + progress < render_g_range.y) {
+						unsigned coll_id = b_point_list(render_g_range.x + progress);
+						assert(coll_id < n_gaussians);
+						collected_id[thread_rank] = coll_id;
+						collected_weight[thread_rank] = data.gm_weights(coll_id);
+
+						// todo filtering convolution  -> kernel size based on camera distance (projected pixel size to gaussian distance)
+						//                                and scale weight
+						const auto centroid = data.gm_centroids(coll_id);
+						collected_centroid[thread_rank] = centroid;
+						const auto distance = glm::distance(centroid, ray.origin);
+						collected_cov3[thread_rank] = g_cov3d(coll_id) + stroke::Cov3<float>(0.00001f + 0.000005f * distance);
+					}
+					__syncthreads();
+
+					if (done)
+						continue;
+
+					// Iterate over current batch
+					for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
+						const auto gaussian1d = gaussian::project_on_ray(collected_centroid[j], collected_cov3[j], ray);
+						const auto weight = gaussian1d.weight * collected_weight[j];
+						max_dist_estimation_opacity += weight;
+						if (max_dist_estimation_opacity > 1) {
+							max_distance = gaussian1d.centre + stroke::sqrt(gaussian1d.C) * 2.f;
+							done = true;
+							break;
+						}
+					}
+				}
+				__syncthreads();
+				done = !inside;
+				n_toDo = render_g_range.y - render_g_range.x;
+
+				// Iterate over batches until all done or range is complete: rasterise into bins
+				for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {
+					// End if entire block votes that it is done rasterizing
+					const int num_done = __syncthreads_count(done);
+					if (num_done == render_block_size)
+						break;
+
+					// Collectively fetch per-Gaussian data from global to shared
+					const int progress = i * render_block_size + thread_rank;
 					if (render_g_range.x + progress < render_g_range.y) {
 						unsigned coll_id = b_point_list(render_g_range.x + progress);
 						assert(coll_id < n_gaussians);
@@ -486,7 +531,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 						if (weight <= 0.001f) // performance critical
 							continue;
 
-						const auto delta = data.max_depth / vol_raster::config::n_rasterisation_steps;
+						const auto delta = max_distance / vol_raster::config::n_rasterisation_steps;
 						auto cdf_start = gaussian::cdf_inv_C(gaussian1d.centre, inv_variance, 0.f);
 						for (auto k = 0; k < vol_raster::config::n_rasterisation_steps; ++k) {
 							//							const auto current_start = k * delta;
