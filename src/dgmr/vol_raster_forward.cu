@@ -444,7 +444,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 
 				whack::Array<glm::vec4, vol_raster::config::n_rasterisation_steps> rasterised_data = {};
 				float max_distance = 0;
-				float max_dist_estimation_opacity = 0;
+				float opacity = 0;
 
 				// Iterate over batches until all done or range is complete: compute max depth
 				for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {
@@ -477,8 +477,8 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 					for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
 						const auto gaussian1d = gaussian::project_on_ray(collected_centroid[j], collected_cov3[j], ray);
 						const auto weight = gaussian1d.weight * collected_weight[j];
-						max_dist_estimation_opacity += weight;
-						if (max_dist_estimation_opacity > 1) {
+						opacity += weight;
+						if (opacity > 1) {
 							max_distance = gaussian1d.centre + stroke::sqrt(gaussian1d.C) * 2.f;
 							done = true;
 							break;
@@ -488,6 +488,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 				__syncthreads();
 				done = !inside;
 				n_toDo = render_g_range.y - render_g_range.x;
+				opacity = 0;
 
 				// Iterate over batches until all done or range is complete: rasterise into bins
 				for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {
@@ -543,6 +544,12 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 								rasterised_data[k] += glm::vec4(g_rgb(collected_id[j]) * integrated, integrated);
 							//							else
 							//								printf("integrated: %f, weight: %f\n", integrated, weight);
+						}
+
+						opacity += weight;
+						if (opacity > 1) {
+							done = true;
+							break;
 						}
 					}
 				}
