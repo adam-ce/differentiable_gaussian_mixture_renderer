@@ -479,7 +479,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 						const auto weight = gaussian1d.weight * collected_weight[j];
 						opacity += weight;
 						max_distance = gaussian1d.centre + stroke::sqrt(gaussian1d.C) * 3.f;
-						if (opacity > 1) {
+						if (opacity > 3) {
 							done = true;
 							break;
 						}
@@ -546,7 +546,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 						}
 
 						opacity += weight;
-						if (opacity > 1) {
+						if (opacity > 3) {
 							done = true;
 							break;
 						}
@@ -593,7 +593,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 				if (!inside)
 					return;
 				// All threads that treat valid pixel write out their final
-				const auto final_colour = C + T * data.background;
+				const auto final_colour = C + T * glm::vec3(1, 0, 0); // data.background;
 				data.framebuffer(0, pix.y, pix.x) = final_colour.x;
 				data.framebuffer(1, pix.y, pix.x) = final_colour.y;
 				data.framebuffer(2, pix.y, pix.x) = final_colour.z;
