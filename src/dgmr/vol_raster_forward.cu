@@ -556,7 +556,8 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 				// blend
 				float T = 1.0f;
 				glm::vec3 C = glm::vec3(0);
-				if (data.debug_render_bin == -1) {
+				switch (data.debug_render_mode) {
+				case VolRasterForwardData::RenderMode::Full: {
 					for (auto k = 0; k < vol_raster::config::n_rasterisation_steps; ++k) {
 						auto current_bin = rasterised_data[k];
 						for (auto i = 0; i < 3; ++i) {
@@ -578,7 +579,10 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 
 						T = test_T;
 					}
-				} else {
+				} break;
+				case VolRasterForwardData::RenderMode::Bins: {
+					if (unsigned(data.debug_render_bin) >= vol_raster::config::n_rasterisation_steps)
+						break;
 					auto current_bin = rasterised_data[data.debug_render_bin];
 					for (auto i = 0; i < 3; ++i) {
 						current_bin[i] /= current_bin[3] + 0.01f; // make an weighted average out of a weighted sum
@@ -588,6 +592,11 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 					C += glm::vec3(current_bin) * alpha * T;
 
 					T = test_T;
+				} break;
+				case VolRasterForwardData::RenderMode::Depth: {
+					C = glm::vec3(max_distance / data.max_depth);
+					T = 0;
+				} break;
 				}
 
 				if (!inside)

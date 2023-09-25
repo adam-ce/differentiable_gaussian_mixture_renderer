@@ -51,6 +51,12 @@ struct VolRasterForwardData {
 	float tan_fovx = 0.f;
 	float max_depth = 20.f;
 	bool debug = true;
+	enum class RenderMode {
+		Full,
+		Bins,
+		Depth
+	};
+	RenderMode debug_render_mode = RenderMode::Full;
 	int debug_render_bin = -1;
 };
 
