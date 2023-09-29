@@ -10,8 +10,7 @@ FetchContent_MakeAvailable(catch2)
 find_package(CUDAToolkit)
 
 add_executable(dgmr_unittests
-    main.cpp
-    gaussian_bounds.cpp
+    utils.cpp
 )
 
 target_link_libraries(dgmr_unittests PUBLIC Catch2::Catch2WithMain CUDA::nvToolsExt differentiable_gaussian_mixture_renderer)

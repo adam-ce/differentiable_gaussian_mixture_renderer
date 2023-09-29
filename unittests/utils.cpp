@@ -31,7 +31,7 @@ namespace {
 // }
 }
 
-TEST_CASE("gaussian_bounds") {
+TEST_CASE("dgmr utils: gaussian_bounds") {
 
 	struct D {
 		glm::vec3 gauss_centr;
