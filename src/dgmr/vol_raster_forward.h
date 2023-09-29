@@ -61,9 +61,10 @@ struct VolRasterForwardData {
 };
 
 namespace vol_raster {
-namespace config {
-constexpr unsigned n_rasterisation_steps = 8;
-}
+struct config {
+	static constexpr unsigned n_rasterisation_steps = 8;
+	static constexpr float transmission_threshold = 0.001f;
+};
 }
 
 VolRasterStatistics vol_raster_forward(VolRasterForwardData& forward_data);

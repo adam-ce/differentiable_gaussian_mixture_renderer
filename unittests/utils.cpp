@@ -24,6 +24,10 @@
 
 using Catch::Approx;
 namespace {
+struct RasterBinSizerConfig {
+	static constexpr float transmission_threshold = 0.1f;
+	static constexpr unsigned n_rasterisation_steps = 4;
+};
 // template <int n_dims>
 // bool equals(const glm::vec<n_dims, double>& a, const glm::vec<n_dims, double>& b, double scale = 1) {
 //	const auto delta = glm::length(a - b);
@@ -60,5 +64,81 @@ TEST_CASE("dgmr utils: gaussian_bounds") {
 
 		CHECK(bounds.min == Approx(d.expected_bounds.min).scale(10));
 		CHECK(bounds.max == Approx(d.expected_bounds.max).scale(10));
+	}
+}
+
+TEST_CASE("dgmr utils: raster bin sizer") {
+
+	SECTION("start empty") {
+		const dgmr::utils::RasterBinSizer<RasterBinSizerConfig> sizer;
+		CHECK(sizer.begin_of(0) == Approx(0));
+		CHECK(sizer.end_of(0) == Approx(0));
+		CHECK(sizer.begin_of(1) == Approx(0));
+		CHECK(sizer.end_of(1) == Approx(0));
+		CHECK(sizer.begin_of(2) == Approx(0));
+		CHECK(sizer.end_of(2) == Approx(0));
+	}
+	SECTION("bin begin and end") {
+		const dgmr::utils::RasterBinSizer<RasterBinSizerConfig> sizer = { 1.f, 2.f, 3.f, 4.f };
+		CHECK(sizer.begin_of(0) == Approx(0));
+		CHECK(sizer.end_of(0) == Approx(1));
+		CHECK(sizer.begin_of(1) == Approx(1));
+		CHECK(sizer.end_of(1) == Approx(2));
+		CHECK(sizer.begin_of(2) == Approx(2));
+		CHECK(sizer.end_of(2) == Approx(3));
+		CHECK(sizer.begin_of(3) == Approx(3));
+		CHECK(sizer.end_of(3) == Approx(4));
+	}
+	SECTION("single opaque element") {
+		dgmr::utils::RasterBinSizer<RasterBinSizerConfig> sizer;
+		CHECK(!sizer.is_full());
+		sizer.add_opacity(10, 0.99);
+		CHECK(sizer.is_full());
+		sizer.finalise();
+		CHECK(sizer.begin_of(0) == Approx(0));
+		CHECK(sizer.end_of(0) == Approx(2.5));
+		CHECK(sizer.begin_of(1) == Approx(2.5));
+		CHECK(sizer.end_of(1) == Approx(5));
+		CHECK(sizer.begin_of(2) == Approx(5));
+		CHECK(sizer.end_of(2) == Approx(7.5));
+		CHECK(sizer.begin_of(3) == Approx(7.5));
+		CHECK(sizer.end_of(3) == Approx(10));
+	}
+	SECTION("enough elements for every transmission stop") {
+		dgmr::utils::RasterBinSizer<RasterBinSizerConfig> sizer;
+		sizer.add_opacity(2.3, 0.26); // 0.74 remains
+		CHECK(!sizer.is_full());
+		sizer.add_opacity(5.6, 0.35); // 0.481 remains
+		CHECK(!sizer.is_full());
+		sizer.add_opacity(7.8, 0.5); // 0.2405 remains
+		CHECK(!sizer.is_full());
+		sizer.add_opacity(10.1, 0.8); // 0.0481 remains, which is under 0.1 from the test config.
+		CHECK(sizer.is_full());
+		sizer.finalise();
+		CHECK(sizer.end_of(0) == Approx(2.3));
+		CHECK(sizer.end_of(1) == Approx(5.6));
+		CHECK(sizer.end_of(2) == Approx(7.8));
+		CHECK(sizer.end_of(3) == Approx(10.1));
+	}
+	SECTION("one gap in transmission stops") {
+		dgmr::utils::RasterBinSizer<RasterBinSizerConfig> sizer;
+		sizer.add_opacity(2.4, 0.6); // 0.4 remains, jumps over 0.75
+		sizer.add_opacity(5.6, 0.5); // 0.2 remains
+		sizer.add_opacity(7.8, 0.9); // 0.02 remains
+		sizer.finalise();
+		CHECK(sizer.end_of(0) == Approx(1.2));
+		CHECK(sizer.end_of(1) == Approx(2.4));
+		CHECK(sizer.end_of(2) == Approx(5.6));
+		CHECK(sizer.end_of(3) == Approx(7.8));
+	}
+	SECTION("two gaps in transmission stops") {
+		dgmr::utils::RasterBinSizer<RasterBinSizerConfig> sizer;
+		sizer.add_opacity(50, 0.6); // 0.4 remains, jumps over 0.75
+		sizer.add_opacity(100, 0.9); // 0.04 remains
+		sizer.finalise();
+		CHECK(sizer.end_of(0) == Approx(25));
+		CHECK(sizer.end_of(1) == Approx(50));
+		CHECK(sizer.end_of(2) == Approx(75));
+		CHECK(sizer.end_of(3) == Approx(100));
 	}
 }

@@ -28,6 +28,69 @@
 
 namespace dgmr::utils {
 
+template <typename config>
+struct RasterBinSizer {
+	static constexpr auto n_bins = config::n_rasterisation_steps;
+	static constexpr auto transmission_threshold = config::transmission_threshold;
+	whack::Array<float, n_bins> bin_borders = {};
+	float transmission = 1.f;
+	STROKE_DEVICES_INLINE float begin_of(unsigned i) const {
+		if (i == 0)
+			return 0;
+		return bin_borders[i - 1];
+	}
+	STROKE_DEVICES_INLINE float end_of(unsigned i) const {
+		return bin_borders[i];
+	}
+	STROKE_DEVICES_INLINE bool is_full() const {
+		return transmission < transmission_threshold;
+	}
+	STROKE_DEVICES_INLINE void add_opacity(float pos, float alpha) {
+		const auto bin_for = [](float transmission) {
+			const auto t_flipped_and_scaled = 1 - (transmission - transmission_threshold) / (1 - transmission_threshold);
+			const auto t_bin = unsigned(stroke::min(t_flipped_and_scaled, 1.0001f) * n_bins);
+			return t_bin - 1;
+		};
+		const auto last_bin = bin_for(transmission);
+		transmission *= 1 - alpha;
+		const auto current_bin = bin_for(transmission);
+		if (last_bin != current_bin && current_bin < n_bins - 1)
+			bin_borders[current_bin] = pos;
+		bin_borders[n_bins - 1] = stroke::max(pos, bin_borders[n_bins - 1]);
+	}
+	STROKE_DEVICES_INLINE void finalise() {
+		const auto find_empty = [this](unsigned start_pos) {
+			for (unsigned i = start_pos; i < n_bins; ++i) {
+				if (bin_borders[i] == 0)
+					return i;
+			}
+			return unsigned(-1);
+		};
+		const auto find_filled = [this](unsigned start_pos) {
+			for (unsigned i = start_pos; i < n_bins; ++i) {
+				if (bin_borders[i] != 0)
+					return i;
+			}
+			return unsigned(-1);
+		};
+
+		unsigned fill_start = find_empty(0);
+		while (fill_start < n_bins) {
+			unsigned fill_end = find_filled(fill_start);
+			assert(fill_end > fill_start);
+			assert(fill_end < n_bins); // last bin should be always filled
+
+			const auto delta = (end_of(fill_end) - begin_of(fill_start)) / (fill_end - fill_start + 1);
+			const auto offset = begin_of(fill_start);
+			for (unsigned i = 0; i < fill_end - fill_start; ++i) {
+				bin_borders[fill_start + i] = offset + delta * (i + 1);
+			}
+
+			fill_start = find_empty(fill_end);
+		}
+	}
+};
+
 STROKE_DEVICES_INLINE stroke::Cov3<float> compute_cov(const glm::vec3& scale, const glm::quat& rot) {
 	const auto RS = glm::toMat3(rot) * glm::mat3(scale.x, 0, 0, 0, scale.y, 0, 0, 0, scale.z);
 	return stroke::Cov3<float>(RS * transpose(RS));
