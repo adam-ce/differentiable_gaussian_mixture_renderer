@@ -42,6 +42,9 @@ struct RasterBinSizer {
 	STROKE_DEVICES_INLINE float end_of(unsigned i) const {
 		return bin_borders[i];
 	}
+	STROKE_DEVICES_INLINE float max_distance() const {
+		return bin_borders[n_bins - 1];
+	}
 	STROKE_DEVICES_INLINE bool is_full() const {
 		return transmission < transmission_threshold;
 	}

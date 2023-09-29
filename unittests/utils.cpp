@@ -119,6 +119,7 @@ TEST_CASE("dgmr utils: raster bin sizer") {
 		CHECK(sizer.end_of(1) == Approx(5.6));
 		CHECK(sizer.end_of(2) == Approx(7.8));
 		CHECK(sizer.end_of(3) == Approx(10.1));
+		CHECK(sizer.max_distance() == Approx(10.1));
 	}
 	SECTION("one gap in transmission stops") {
 		dgmr::utils::RasterBinSizer<RasterBinSizerConfig> sizer;
@@ -130,6 +131,7 @@ TEST_CASE("dgmr utils: raster bin sizer") {
 		CHECK(sizer.end_of(1) == Approx(2.4));
 		CHECK(sizer.end_of(2) == Approx(5.6));
 		CHECK(sizer.end_of(3) == Approx(7.8));
+		CHECK(sizer.max_distance() == Approx(7.8));
 	}
 	SECTION("two gaps in transmission stops") {
 		dgmr::utils::RasterBinSizer<RasterBinSizerConfig> sizer;
@@ -140,5 +142,6 @@ TEST_CASE("dgmr utils: raster bin sizer") {
 		CHECK(sizer.end_of(1) == Approx(50));
 		CHECK(sizer.end_of(2) == Approx(75));
 		CHECK(sizer.end_of(3) == Approx(100));
+		CHECK(sizer.max_distance() == Approx(100));
 	}
 }

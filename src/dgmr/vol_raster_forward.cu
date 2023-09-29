@@ -416,9 +416,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 				__shared__ stroke::Cov3<float> collected_cov3[render_block_size];
 
 				whack::Array<glm::vec4, vol_raster::config::n_rasterisation_steps> rasterised_data = {};
-				whack::Array<float, vol_raster::config::n_rasterisation_steps> rasterisation_bin_boundaries = { 0.4, 0.8, 0.94, 0.97, 0.986, 0.994, 0.998, 1.0f };
-				float max_distance = 0;
-				float opacity = 1;
+				utils::RasterBinSizer<vol_raster::config> rasterisation_bin_sizer;
 
 				// Iterate over batches until all done or range is complete: compute max depth
 				for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {
@@ -457,30 +455,18 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 						if (g_end_position < 0)
 							continue;
 						const auto alpha = stroke::min(0.99f, weight * gaussian::integrate(gaussian1d.centre, gaussian1d.C, { 0, g_end_position }));
-						opacity *= 1 - alpha;
-
-						// todo: fill rasterisation_bin_boundaries on the fly
-						// handle - opacity not reaching 0.001
-						//        - opacity jumping up very quickly (skiping some bins)
-
-						max_distance = stroke::max(max_distance, g_end_position);
-						if (opacity < 0.001) {
+						rasterisation_bin_sizer.add_opacity(g_end_position, alpha);
+						if (rasterisation_bin_sizer.is_full()) {
 							done = true;
 							break;
 						}
 					}
 				}
 
-				//				if (opacity >= 0.001) {
-				for (auto k = 0u; k < vol_raster::config::n_rasterisation_steps; ++k) {
-					rasterisation_bin_boundaries[k] = (k + 1) * max_distance / vol_raster::config::n_rasterisation_steps;
-				}
-				//				}
-
 				__syncthreads();
 				done = !inside;
 				n_toDo = render_g_range.y - render_g_range.x;
-				opacity = 1;
+				float opacity = 1;
 
 				// Iterate over batches until all done or range is complete: rasterise into bins
 				for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {
@@ -522,13 +508,13 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 							printf("gaussian1d.C: %f, collected_cov3[j]: %f/%f/%f/%f/%f/%f, det: %f\n", gaussian1d.C, C3[0], C3[1], C3[2], C3[3], C3[4], C3[5], det(C3));
 							//							printf("weight: %f, gaussian1d.weight: %f, collected_weight[j]: %f, stroke::gaussian::norm_factor(gaussian1d.C): %f, gaussian1d.C: %f\n", weight, gaussian1d.weight, collected_weight[j], stroke::gaussian::norm_factor(gaussian1d.C), gaussian1d.C);
 						}
-						if (weight * gaussian::integrate(gaussian1d.centre, gaussian1d.C, { 0, max_distance }) <= 0.001f) // performance critical
+						if (weight * gaussian::integrate(gaussian1d.centre, gaussian1d.C, { 0, rasterisation_bin_sizer.max_distance() }) <= 0.001f) // performance critical
 							continue;
 
 						const auto inv_variance = 1 / gaussian1d.C;
 						auto cdf_start = gaussian::cdf_inv_C(gaussian1d.centre, inv_variance, 0.f);
-						for (auto k = 0; k < vol_raster::config::n_rasterisation_steps; ++k) {
-							const auto cdf_end = gaussian::cdf_inv_C(gaussian1d.centre, inv_variance, rasterisation_bin_boundaries[k]);
+						for (auto k = 0u; k < vol_raster::config::n_rasterisation_steps; ++k) {
+							const auto cdf_end = gaussian::cdf_inv_C(gaussian1d.centre, inv_variance, rasterisation_bin_sizer.end_of(k));
 							const auto integrated = (cdf_end - cdf_start) * weight;
 							cdf_start = cdf_end;
 							rasterised_data[k] += glm::vec4(g_rgb(collected_id[j]) * integrated, integrated);
@@ -586,7 +572,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 					T = test_T;
 				} break;
 				case VolRasterForwardData::RenderMode::Depth: {
-					C = glm::vec3(max_distance / data.max_depth);
+					C = glm::vec3(rasterisation_bin_sizer.max_distance() / data.max_depth);
 					T = 0;
 				} break;
 				}
