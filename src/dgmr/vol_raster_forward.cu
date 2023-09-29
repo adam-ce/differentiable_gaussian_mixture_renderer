@@ -17,6 +17,7 @@
  *****************************************************************************/
 
 #include "constants.h"
+#include "utils.h"
 #include "vol_raster_forward.h"
 
 #include <stroke/gaussian.h>
@@ -59,35 +60,6 @@ static_assert(sizeof(ConicAndOpacity) == 4 * 4);
 			throw std::runtime_error(cudaGetErrorString(ret));                                                         \
 		}                                                                                                              \
 	}
-
-// Forward method for converting scale and rotation properties of each
-// Gaussian to a 3D covariance matrix in world space. Also takes care
-// of quaternion normalization.
-STROKE_DEVICES_INLINE stroke::Cov3<float> computeCov3D(const glm::vec3& scale, float mod, const glm::vec4& rot) {
-	// Create scaling matrix
-	glm::mat3 S = glm::mat3(1.0f);
-	S[0][0] = mod * scale.x;
-	S[1][1] = mod * scale.y;
-	S[2][2] = mod * scale.z;
-
-	// Normalize quaternion to get valid rotation
-	glm::vec4 q = rot; // / glm::length(rot);
-	float r = q.x;
-	float x = q.y;
-	float y = q.z;
-	float z = q.w;
-
-	// Compute rotation matrix from quaternion
-	glm::mat3 R = glm::mat3(
-		1.f - 2.f * (y * y + z * z), 2.f * (x * y - r * z), 2.f * (x * z + r * y),
-		2.f * (x * y + r * z), 1.f - 2.f * (x * x + z * z), 2.f * (y * z - r * x),
-		2.f * (x * z - r * y), 2.f * (y * z + r * x), 1.f - 2.f * (x * x + y * y));
-
-	glm::mat3 M = S * R;
-
-	// Compute 3D world covariance matrix Sigma
-	return stroke::Cov3<float>(glm::transpose(M) * M);
-}
 
 // Forward method for converting the input spherical harmonics
 // coefficients of each Gaussian to a simple RGB color.
@@ -239,7 +211,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 				if ((data.view_matrix * glm::vec4(centroid, 1.f)).z < 0.2) // adam doesn't understand, why projection matrix > 0 isn't enough.
 					return;
 
-				const auto cov3d = computeCov3D(data.gm_cov_scales(idx), data.cov_scale_multiplier, data.gm_cov_rotations(idx));
+				const auto cov3d = utils::compute_cov(data.gm_cov_scales(idx), data.gm_cov_rotations(idx));
 				const auto projected_centroid = project(centroid, data.proj_matrix);
 				if (projected_centroid.z < 0.0)
 					return;

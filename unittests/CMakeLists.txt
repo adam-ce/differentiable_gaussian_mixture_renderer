@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.18)
-project(cuda_stroke_unittests LANGUAGES CUDA CXX)
+project(dgmr_unittests LANGUAGES CUDA CXX)
 
 FetchContent_Declare(catch2
     GIT_REPOSITORY https://github.com/catchorg/Catch2.git
@@ -7,10 +7,11 @@ FetchContent_Declare(catch2
     SOURCE_DIR 		${CMAKE_SOURCE_DIR}/3rdparty/Catch2
 )
 FetchContent_MakeAvailable(catch2)
+find_package(CUDAToolkit)
 
-add_executable(stroke_unittests
+add_executable(dgmr_unittests
     main.cpp
+    gaussian_bounds.cpp
 )
 
-target_link_libraries(stroke_unittests PUBLIC Catch2::Catch2WithMain CUDA::nvToolsExt stroke)
-target_compile_options(stroke_unittests PUBLIC $<$<COMPILE_LANGUAGE:CUDA>:-lineinfo>)
+target_link_libraries(dgmr_unittests PUBLIC Catch2::Catch2WithMain CUDA::nvToolsExt differentiable_gaussian_mixture_renderer)

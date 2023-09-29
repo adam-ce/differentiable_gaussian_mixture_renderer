@@ -1,5 +1,5 @@
 /*****************************************************************************
- * Stroke
+ * DGMR
  * Copyright (C) 2023 Adam Celarek
  *
  * This program is free software: you can redistribute it and/or modify
@@ -37,8 +37,3 @@ TEST_CASE("main.cpp (check that NaNs are enabled (-ffast-math removes support an
     REQUIRE(std::isnan(std::numeric_limits<float>::quiet_NaN() * float(std::chrono::system_clock::now().time_since_epoch().count())));
     REQUIRE(std::isnan(double(std::numeric_limits<float>::quiet_NaN() * float(std::chrono::system_clock::now().time_since_epoch().count()))));
 }
-
-// next steps:
-// project using camera matrix (ewa splatting)
-// spherical harmonics
-// port gradients

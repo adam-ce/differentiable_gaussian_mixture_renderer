@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.19)
 project(cuda_stroke_lib LANGUAGES CUDA CXX)
 
-option(AUTOUPDATE_STROKE_LIBRARY "Keeps whack up-to-date with origin/main, but prevents local edits. Change to OFF if you want to edit whack." ON)
+option(AUTOUPDATE_STROKE_LIBRARY "Keeps whack up-to-date with origin/main, but prevents local edits. Change to OFF if you want to edit whack." OFF)
 set(A_PYTHON_ENV_PATH "$ENV{HOME}/.local/" CACHE PATH "Path to your python environment (pip, conda or similar)")
 set(A_PYTHON_ENV_SITE_PACKAGES_PATH "$ENV{HOME}/.local/lib/python3.10/site-packages/" CACHE PATH "Path to your python site-packages directory (python version dependent, try echo $PYTHONPATH on the terminal)")
 
@@ -41,7 +41,7 @@ add_library(differentiable_gaussian_mixture_renderer
 	dgmr/splat_forward.h	dgmr/splat_forward.cu
     dgmr/vol_raster_forward.h	dgmr/vol_raster_forward.cu
 	dgmr/constants.h
-
+    dgmr/utils.h
 )
 target_link_libraries(differentiable_gaussian_mixture_renderer PUBLIC stroke whack)
 target_include_directories(differentiable_gaussian_mixture_renderer INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})

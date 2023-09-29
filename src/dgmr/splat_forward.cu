@@ -18,6 +18,7 @@
 
 #include "constants.h"
 #include "splat_forward.h"
+#include "utils.h"
 
 #include <stroke/gaussian.h>
 #include <stroke/matrix.h>
@@ -53,35 +54,6 @@ STROKE_DEVICES_INLINE stroke::Cov2<scalar_t> affine_transform_and_cut(const stro
 			throw std::runtime_error(cudaGetErrorString(ret));                                                         \
 		}                                                                                                              \
 	}
-
-// Forward method for converting scale and rotation properties of each
-// Gaussian to a 3D covariance matrix in world space. Also takes care
-// of quaternion normalization.
-STROKE_DEVICES_INLINE stroke::Cov3<float> computeCov3D(const glm::vec3& scale, float mod, const glm::vec4& rot) {
-	// Create scaling matrix
-	glm::mat3 S = glm::mat3(1.0f);
-	S[0][0] = mod * scale.x;
-	S[1][1] = mod * scale.y;
-	S[2][2] = mod * scale.z;
-
-	// Normalize quaternion to get valid rotation
-	glm::vec4 q = rot; // / glm::length(rot);
-	float r = q.x;
-	float x = q.y;
-	float y = q.z;
-	float z = q.w;
-
-	// Compute rotation matrix from quaternion
-	glm::mat3 R = glm::mat3(
-		1.f - 2.f * (y * y + z * z), 2.f * (x * y - r * z), 2.f * (x * z + r * y),
-		2.f * (x * y + r * z), 1.f - 2.f * (x * x + z * z), 2.f * (y * z - r * x),
-		2.f * (x * z - r * y), 2.f * (y * z + r * x), 1.f - 2.f * (x * x + y * y));
-
-	glm::mat3 M = S * R;
-
-	// Compute 3D world covariance matrix Sigma
-	return stroke::Cov3<float>(glm::transpose(M) * M);
-}
 
 // Forward method for converting the input spherical harmonics
 // coefficients of each Gaussian to a simple RGB color.
@@ -230,7 +202,7 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data) {
 				if ((data.view_matrix * glm::vec4(centroid, 1.f)).z < 0.2) // adam doesn't understand, why projection matrix > 0 isn't enough.
 					return;
 
-				const auto cov3d = computeCov3D(data.gm_cov_scales(idx), data.cov_scale_multiplier, data.gm_cov_rotations(idx));
+				const auto cov3d = utils::compute_cov(data.gm_cov_scales(idx) * data.cov_scale_multiplier, data.gm_cov_rotations(idx));
 				const auto projected_centroid = project(centroid, data.proj_matrix);
 				if (projected_centroid.z < 0.0)
 					return;
@@ -481,7 +453,7 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data) {
 				// rendering data to the frame and auxiliary buffers.if (inside) {
 				//			final_T[pix_id] = T;
 				//			n_contrib[pix_id] = last_contributor;
-				const auto final_colour = C + T * data.background;
+				const auto final_colour = C + T * glm::vec3(1, 0, 0); // data.background;
 				data.framebuffer(0, pix.y, pix.x) = final_colour.x;
 				data.framebuffer(1, pix.y, pix.x) = final_colour.y;
 				data.framebuffer(2, pix.y, pix.x) = final_colour.z;
