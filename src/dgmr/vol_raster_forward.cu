@@ -251,7 +251,8 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 					g_points_xy_image(idx) = point_image;
 				}
 
-				g_depths(idx) = glm::length(data.cam_poition - centroid);
+				//				g_depths(idx) = glm::length(data.cam_poition - centroid);
+				g_depths(idx) = utils::gaussian_to_point_distance_bounds(centroid, data.gm_cov_scales(idx), data.gm_cov_rotations(idx), 3, data.cam_poition).max;
 
 				// convert spherical harmonics coefficients to RGB color.
 				g_rgb(idx) = computeColorFromSH(data.sh_degree, centroid, data.cam_poition, data.gm_sh_params(idx), &g_rgb_sh_clamped(idx));
@@ -415,8 +416,9 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 				__shared__ stroke::Cov3<float> collected_cov3[render_block_size];
 
 				whack::Array<glm::vec4, vol_raster::config::n_rasterisation_steps> rasterised_data = {};
+				constexpr whack::Array<float, vol_raster::config::n_rasterisation_steps> rasterisation_bin_boundaries = { 0.4, 0.8, 0.94, 0.97, 0.986, 0.994, 0.998, 1.0f };
 				float max_distance = 0;
-				float opacity = 0;
+				float opacity = 1;
 
 				// Iterate over batches until all done or range is complete: compute max depth
 				for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {
@@ -449,9 +451,15 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 					for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
 						const auto gaussian1d = gaussian::project_on_ray(collected_centroid[j], collected_cov3[j], ray);
 						const auto weight = gaussian1d.weight * collected_weight[j];
-						opacity += weight;
-						max_distance = gaussian1d.centre + stroke::sqrt(gaussian1d.C) * 3.f;
-						if (opacity > 3) {
+						if (weight < 0.01)
+							continue;
+						const auto g_end_position = gaussian1d.centre + stroke::sqrt(gaussian1d.C) * 3.f;
+						if (g_end_position < 0)
+							continue;
+						const auto alpha = stroke::min(0.99f, weight * gaussian::integrate(gaussian1d.centre, gaussian1d.C, { 0, g_end_position }));
+						opacity *= 1 - alpha;
+						max_distance = stroke::max(max_distance, g_end_position);
+						if (opacity < 0.001) {
 							done = true;
 							break;
 						}
@@ -460,7 +468,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 				__syncthreads();
 				done = !inside;
 				n_toDo = render_g_range.y - render_g_range.x;
-				opacity = 0;
+				opacity = 1;
 
 				// Iterate over batches until all done or range is complete: rasterise into bins
 				for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {
@@ -502,23 +510,25 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 							printf("gaussian1d.C: %f, collected_cov3[j]: %f/%f/%f/%f/%f/%f, det: %f\n", gaussian1d.C, C3[0], C3[1], C3[2], C3[3], C3[4], C3[5], det(C3));
 							//							printf("weight: %f, gaussian1d.weight: %f, collected_weight[j]: %f, stroke::gaussian::norm_factor(gaussian1d.C): %f, gaussian1d.C: %f\n", weight, gaussian1d.weight, collected_weight[j], stroke::gaussian::norm_factor(gaussian1d.C), gaussian1d.C);
 						}
-						if (weight <= 0.001f) // performance critical
+						if (weight * gaussian::integrate(gaussian1d.centre, gaussian1d.C, { 0, max_distance }) <= 0.001f) // performance critical
 							continue;
 
 						const auto inv_variance = 1 / gaussian1d.C;
-						const auto delta = max_distance / vol_raster::config::n_rasterisation_steps;
 						auto cdf_start = gaussian::cdf_inv_C(gaussian1d.centre, inv_variance, 0.f);
 						for (auto k = 0; k < vol_raster::config::n_rasterisation_steps; ++k) {
-							//							const auto current_start = k * delta;
-							const auto current_end = (k + 1) * delta;
+							//							const auto current_end = rasterisation_bin_boundaries[k] * max_distance;
+							const auto current_end = (k + 1) * max_distance / vol_raster::config::n_rasterisation_steps;
 							const auto cdf_end = gaussian::cdf_inv_C(gaussian1d.centre, inv_variance, current_end);
 							const auto integrated = (cdf_end - cdf_start) * weight;
 							cdf_start = cdf_end;
 							rasterised_data[k] += glm::vec4(g_rgb(collected_id[j]) * integrated, integrated);
 						}
 
-						opacity += weight;
-						if (opacity > 3) {
+						// terminates too early when an intense gaussian is ordered behind many less intense ones, but its location is in front
+						// however, i didn't see artefacts of it. performance boost, but only in combination with opacity filtering.
+						// todo: in the future, we should order using the front side, and stop once we compute front sides behind max_distance.
+						opacity *= 1 - (cdf_start - gaussian::cdf_inv_C(gaussian1d.centre, inv_variance, 0.f)) * weight; // end - start again, but here cdf_tart refers to the actual end.
+						if (opacity < 0.0001f) {
 							done = true;
 							break;
 						}
