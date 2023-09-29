@@ -18,13 +18,13 @@
 
 #pragma once
 
-#include <stroke/cuda_compat.h>
-#include <stroke/geometry.h>
-#include <stroke/matrix.h>
-
+#include <cuda/std/tuple>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
+#include <stroke/cuda_compat.h>
+#include <stroke/geometry.h>
+#include <stroke/matrix.h>
 
 namespace dgmr::utils {
 
@@ -97,6 +97,18 @@ struct RasterBinSizer {
 STROKE_DEVICES_INLINE stroke::Cov3<float> compute_cov(const glm::vec3& scale, const glm::quat& rot) {
 	const auto RS = glm::toMat3(rot) * glm::mat3(scale.x, 0, 0, 0, scale.y, 0, 0, 0, scale.z);
 	return stroke::Cov3<float>(RS * transpose(RS));
+}
+
+// todo: this doesn't use resolution or fov. need to compute convolution size based on that. + also need to compute weight adjustment.
+struct FilteredCov3AndWeight {
+	stroke::Cov3<float> cov;
+	float weight_factor;
+};
+
+STROKE_DEVICES_INLINE FilteredCov3AndWeight filter_for_aa(const glm::vec3& centroid, const stroke::Cov3<float>& cov, const glm::vec3& camera_position) {
+	const auto distance = glm::distance(centroid, camera_position);
+	const auto new_cov = cov + stroke::Cov3(0.00001f + 0.000005f * distance);
+	return { new_cov, 1.f };
 }
 
 STROKE_DEVICES_INLINE stroke::geometry::Aabb1f gaussian_to_point_distance_bounds(

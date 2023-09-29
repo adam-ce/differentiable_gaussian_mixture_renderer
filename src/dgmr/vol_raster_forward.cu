@@ -183,9 +183,6 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 	auto g_points_xy_image_data = whack::make_tensor<glm::vec2>(whack::Location::Device, n_gaussians);
 	auto g_points_xy_image = g_points_xy_image_data.view();
 
-	auto g_conic_opacity_data = whack::make_tensor<ConicAndOpacity>(whack::Location::Device, n_gaussians);
-	auto g_conic_opacity = g_conic_opacity_data.view();
-
 	auto g_cov3d_data = whack::make_tensor<stroke::Cov3<float>>(whack::Location::Device, n_gaussians);
 	auto g_cov3d = g_cov3d_data.view();
 
@@ -212,11 +209,14 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 					return;
 
 				const auto cov3d = utils::compute_cov(data.gm_cov_scales(idx), data.gm_cov_rotations(idx));
+
+				// todo store a copy of weight including the weight factor.
+				const auto [filtered_cov_3d, aa_weight_factor] = utils::filter_for_aa(centroid, cov3d, data.cam_poition);
 				const auto projected_centroid = project(centroid, data.proj_matrix);
 				if (projected_centroid.z < 0.0)
 					return;
 
-				auto cov2d = computeCov2D(centroid, focal_x, focal_y, data.tan_fovx, data.tan_fovy, cov3d, data.view_matrix);
+				auto cov2d = computeCov2D(centroid, focal_x, focal_y, data.tan_fovx, data.tan_fovy, filtered_cov_3d, data.view_matrix);
 
 				// anti aliasing:
 				// Apply low-pass filter: convolve with a gaussian with variance 0.3, i.e. every Gaussian should be at least
@@ -256,11 +256,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 
 				// convert spherical harmonics coefficients to RGB color.
 				g_rgb(idx) = computeColorFromSH(data.sh_degree, centroid, data.cam_poition, data.gm_sh_params(idx), &g_rgb_sh_clamped(idx));
-
-				// Inverse 2D covariance and opacity neatly pack into one float4
-				const auto conic2d = inverse(cov2d);
-				g_conic_opacity(idx) = { conic2d, opacity };
-				g_cov3d(idx) = cov3d;
+				g_cov3d(idx) = filtered_cov_3d;
 			});
 	}
 
@@ -431,14 +427,9 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 						unsigned coll_id = b_point_list(render_g_range.x + progress);
 						assert(coll_id < n_gaussians);
 						collected_id[thread_rank] = coll_id;
-						collected_weight[thread_rank] = data.gm_weights(coll_id);
-
-						// todo filtering convolution  -> kernel size based on camera distance (projected pixel size to gaussian distance)
-						//                                and scale weight
-						const auto centroid = data.gm_centroids(coll_id);
-						collected_centroid[thread_rank] = centroid;
-						const auto distance = glm::distance(centroid, ray.origin);
-						collected_cov3[thread_rank] = g_cov3d(coll_id) + stroke::Cov3<float>(0.00001f + 0.000005f * distance);
+						collected_centroid[thread_rank] = data.gm_centroids(coll_id);
+						collected_cov3[thread_rank] = g_cov3d(coll_id);
+						collected_weight[thread_rank] = data.gm_weights(coll_id); // todo: aa factor missing
 					}
 					__syncthreads();
 
@@ -481,14 +472,9 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 						unsigned coll_id = b_point_list(render_g_range.x + progress);
 						assert(coll_id < n_gaussians);
 						collected_id[thread_rank] = coll_id;
-						collected_weight[thread_rank] = data.gm_weights(coll_id);
-
-						// todo filtering convolution  -> kernel size based on camera distance (projected pixel size to gaussian distance)
-						//                                and scale weight
-						const auto centroid = data.gm_centroids(coll_id);
-						collected_centroid[thread_rank] = centroid;
-						const auto distance = glm::distance(centroid, ray.origin);
-						collected_cov3[thread_rank] = g_cov3d(coll_id) + stroke::Cov3<float>(0.00001f + 0.000005f * distance);
+						collected_centroid[thread_rank] = data.gm_centroids(coll_id);
+						collected_cov3[thread_rank] = g_cov3d(coll_id);
+						collected_weight[thread_rank] = data.gm_weights(coll_id); // todo: aa factor missing
 					}
 					// block.sync();
 					__syncthreads();
