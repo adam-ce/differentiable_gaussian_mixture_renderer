@@ -115,7 +115,7 @@ struct FilteredCov3AndWeight {
 
 STROKE_DEVICES_INLINE FilteredCov3AndWeight filter_for_aa(const glm::vec3& centroid, const stroke::Cov3<float>& cov, const glm::vec3& camera_position) {
 	const auto distance = glm::distance(centroid, camera_position);
-	const auto new_cov = cov + stroke::Cov3(0.00001f + 0.000005f * distance);
+	const auto new_cov = cov + stroke::Cov3(0.0000001f + 0.000005f * distance);
 	return { new_cov, 1.f };
 }
 
