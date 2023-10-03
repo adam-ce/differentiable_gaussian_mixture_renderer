@@ -445,13 +445,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 						const auto weight = gaussian1d.weight * collected_weight[j];
 						if (weight < 0.01)
 							continue;
-						if (gaussian1d.C <= 0.00001)
-							continue; // todo: shouldn't happen any more in the future, after implementing AA
-						const auto g_end_position = gaussian1d.centre + stroke::sqrt(gaussian1d.C) * vol_raster::config::gaussian_relevance_sigma;
-						if (g_end_position < 0)
-							continue;
-						const auto alpha = stroke::min(0.99f, weight * gaussian::integrate(gaussian1d.centre, gaussian1d.C, { 0, g_end_position }));
-						rasterisation_bin_sizer.add_opacity(g_end_position, alpha);
+						rasterisation_bin_sizer.add_gaussian(weight, gaussian1d.centre, gaussian1d.C);
 						if (rasterisation_bin_sizer.is_full()) {
 							done = true;
 							break;

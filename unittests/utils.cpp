@@ -27,6 +27,7 @@ namespace {
 struct RasterBinSizerConfig {
 	static constexpr float transmission_threshold = 0.1f;
 	static constexpr unsigned n_rasterisation_steps = 4;
+	static constexpr float gaussian_relevance_sigma = 1.f;
 };
 // template <int n_dims>
 // bool equals(const glm::vec<n_dims, double>& a, const glm::vec<n_dims, double>& b, double scale = 1) {
@@ -94,10 +95,11 @@ TEST_CASE("dgmr utils: raster bin sizer") {
 		dgmr::utils::RasterBinSizer<RasterBinSizerConfig> sizer;
 		sizer.finalise();
 	}
+
 	SECTION("single opaque element") {
 		dgmr::utils::RasterBinSizer<RasterBinSizerConfig> sizer;
 		CHECK(!sizer.is_full());
-		sizer.add_opacity(10, 0.99);
+		sizer.add_gaussian(1.52f, 8, 4);
 		CHECK(sizer.is_full());
 		sizer.finalise();
 		CHECK(sizer.begin_of(0) == Approx(0));
@@ -111,13 +113,13 @@ TEST_CASE("dgmr utils: raster bin sizer") {
 	}
 	SECTION("enough elements for every transmission stop") {
 		dgmr::utils::RasterBinSizer<RasterBinSizerConfig> sizer;
-		sizer.add_opacity(2.3, 0.26); // 0.74 remains
+		sizer.add_gaussian(0.35f, 1.3f, 1.f); // 0.739 remains
 		CHECK(!sizer.is_full());
-		sizer.add_opacity(5.6, 0.35); // 0.481 remains
+		sizer.add_gaussian(0.40f, 4.7f, 0.81f); // 0.483 remains
 		CHECK(!sizer.is_full());
-		sizer.add_opacity(7.8, 0.5); // 0.2405 remains
+		sizer.add_gaussian(0.6, 6.8, 1.f); // 0.239 remains
 		CHECK(!sizer.is_full());
-		sizer.add_opacity(10.1, 0.8); // 0.0481 remains, which is under 0.1 from the test config.
+		sizer.add_gaussian(0.8, 9.6, 0.25f); // 0.052 remains, which is under 0.1 from the test config.
 		CHECK(sizer.is_full());
 		sizer.finalise();
 		CHECK(sizer.end_of(0) == Approx(2.3));
@@ -128,15 +130,15 @@ TEST_CASE("dgmr utils: raster bin sizer") {
 	}
 	SECTION("one gap in transmission stops") {
 		dgmr::utils::RasterBinSizer<RasterBinSizerConfig> sizer;
-		sizer.add_opacity(2.4, 0.6); // 0.4 remains, jumps over 0.75
-		sizer.add_opacity(5.6, 0.5); // 0.2 remains
-		sizer.add_opacity(7.8, 0.9); // 0.02 remains
+		sizer.add_gaussian(0.7f, 4.7f, 0.81f); // 0.393 remains, jumps over 0.75
+		sizer.add_gaussian(0.6, 6.8, 1.f); // 0.195 remains
+		sizer.add_gaussian(0.8, 9.6, 0.25f); // 0.042 remains, which is under 0.1 from the test config.
 		sizer.finalise();
-		CHECK(sizer.end_of(0) == Approx(1.2));
-		CHECK(sizer.end_of(1) == Approx(2.4));
-		CHECK(sizer.end_of(2) == Approx(5.6));
-		CHECK(sizer.end_of(3) == Approx(7.8));
-		CHECK(sizer.max_distance() == Approx(7.8));
+		CHECK(sizer.end_of(0) == Approx(2.8));
+		CHECK(sizer.end_of(1) == Approx(5.6));
+		CHECK(sizer.end_of(2) == Approx(7.8));
+		CHECK(sizer.end_of(3) == Approx(10.1));
+		CHECK(sizer.max_distance() == Approx(10.1));
 	}
 	SECTION("two gaps in transmission stops") {
 		dgmr::utils::RasterBinSizer<RasterBinSizerConfig> sizer;

@@ -23,6 +23,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <stroke/cuda_compat.h>
+#include <stroke/gaussian.h>
 #include <stroke/geometry.h>
 #include <stroke/matrix.h>
 
@@ -63,6 +64,14 @@ struct RasterBinSizer {
 		if (last_bin != current_bin && current_bin < n_bins - 1)
 			bin_borders[current_bin] = pos;
 		bin_borders[n_bins - 1] = stroke::max(pos, bin_borders[n_bins - 1]);
+	}
+	STROKE_DEVICES_INLINE void add_gaussian(float opacity, float centre, float variance) {
+		namespace gaussian = stroke::gaussian;
+		const auto g_end_position = centre + stroke::sqrt(variance) * config::gaussian_relevance_sigma;
+		if (g_end_position < 0)
+			return;
+		const auto alpha = stroke::min(0.99f, opacity * gaussian::integrate(centre, variance, { 0, g_end_position }));
+		add_opacity(g_end_position, alpha);
 	}
 	STROKE_DEVICES_INLINE void finalise() {
 		const auto find_empty = [this](unsigned start_pos) {

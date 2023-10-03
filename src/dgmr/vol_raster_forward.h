@@ -64,6 +64,7 @@ namespace vol_raster {
 struct config {
 	static constexpr unsigned n_rasterisation_steps = 32;
 	static constexpr float transmission_threshold = 0.001f;
+	static constexpr float gaussian_relevance_sigma = 3.f;
 };
 }
 
