@@ -49,6 +49,9 @@ struct RasterBinSizer {
 		return transmission < transmission_threshold;
 	}
 	STROKE_DEVICES_INLINE void add_opacity(float pos, float alpha) {
+		assert(!stroke::isnan(pos));
+		assert(!stroke::isnan(alpha));
+
 		const auto bin_for = [](float transmission) {
 			const auto t_flipped_and_scaled = 1 - (transmission - transmission_threshold) / (1 - transmission_threshold);
 			const auto t_bin = unsigned(stroke::min(t_flipped_and_scaled, 1.0001f) * n_bins);
@@ -77,16 +80,21 @@ struct RasterBinSizer {
 			return unsigned(-1);
 		};
 
+		if (bin_borders[n_bins - 1] == 0)
+			return;
+
 		unsigned fill_start = find_empty(0);
 		while (fill_start < n_bins) {
 			unsigned fill_end = find_filled(fill_start);
 			assert(fill_end > fill_start);
-			assert(fill_end < n_bins); // last bin should be always filled
+			assert(fill_end < n_bins); // last bin is always filled
 
 			const auto delta = (end_of(fill_end) - begin_of(fill_start)) / (fill_end - fill_start + 1);
+			assert(!stroke::isnan(delta));
 			const auto offset = begin_of(fill_start);
 			for (unsigned i = 0; i < fill_end - fill_start; ++i) {
 				bin_borders[fill_start + i] = offset + delta * (i + 1);
+				assert(!stroke::isnan(bin_borders[fill_start + i]));
 			}
 
 			fill_start = find_empty(fill_end);

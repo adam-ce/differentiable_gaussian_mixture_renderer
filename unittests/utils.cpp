@@ -89,6 +89,11 @@ TEST_CASE("dgmr utils: raster bin sizer") {
 		CHECK(sizer.begin_of(3) == Approx(3));
 		CHECK(sizer.end_of(3) == Approx(4));
 	}
+
+	SECTION("finalise on empty sizer doesn't crash") {
+		dgmr::utils::RasterBinSizer<RasterBinSizerConfig> sizer;
+		sizer.finalise();
+	}
 	SECTION("single opaque element") {
 		dgmr::utils::RasterBinSizer<RasterBinSizerConfig> sizer;
 		CHECK(!sizer.is_full());

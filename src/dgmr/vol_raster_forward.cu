@@ -27,6 +27,7 @@
 
 namespace {
 using namespace dgmr;
+using namespace dgmr::vol_raster;
 namespace gaussian = stroke::gaussian;
 
 // my own:
@@ -252,7 +253,9 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 				}
 
 				//				g_depths(idx) = glm::length(data.cam_poition - centroid);
-				g_depths(idx) = utils::gaussian_to_point_distance_bounds(centroid, data.gm_cov_scales(idx), data.gm_cov_rotations(idx), 3, data.cam_poition).max;
+				g_depths(idx) = utils::gaussian_to_point_distance_bounds(
+					centroid, data.gm_cov_scales(idx), data.gm_cov_rotations(idx), vol_raster::config::gaussian_relevance_sigma, data.cam_poition)
+									.max;
 
 				// convert spherical harmonics coefficients to RGB color.
 				g_rgb(idx) = computeColorFromSH(data.sh_degree, centroid, data.cam_poition, data.gm_sh_params(idx), &g_rgb_sh_clamped(idx));
@@ -442,7 +445,9 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 						const auto weight = gaussian1d.weight * collected_weight[j];
 						if (weight < 0.01)
 							continue;
-						const auto g_end_position = gaussian1d.centre + stroke::sqrt(gaussian1d.C) * 3.f;
+						if (gaussian1d.C <= 0.00001)
+							continue; // todo: shouldn't happen any more in the future, after implementing AA
+						const auto g_end_position = gaussian1d.centre + stroke::sqrt(gaussian1d.C) * vol_raster::config::gaussian_relevance_sigma;
 						if (g_end_position < 0)
 							continue;
 						const auto alpha = stroke::min(0.99f, weight * gaussian::integrate(gaussian1d.centre, gaussian1d.C, { 0, g_end_position }));
@@ -455,6 +460,8 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 				}
 
 				__syncthreads();
+
+				rasterisation_bin_sizer.finalise();
 				done = !inside;
 				n_toDo = render_g_range.y - render_g_range.x;
 				float opacity = 1;
@@ -547,7 +554,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 				case VolRasterForwardData::RenderMode::Bins: {
 					if (unsigned(data.debug_render_bin) >= vol_raster::config::n_rasterisation_steps)
 						break;
-					auto current_bin = rasterised_data[data.debug_render_bin];
+					auto current_bin = rasterised_data[stroke::min(unsigned(data.debug_render_bin), config::n_rasterisation_steps - 1)];
 					for (auto i = 0; i < 3; ++i) {
 						current_bin[i] /= current_bin[3] + 0.01f; // make an weighted average out of a weighted sum
 					}
@@ -558,7 +565,14 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 					T = test_T;
 				} break;
 				case VolRasterForwardData::RenderMode::Depth: {
-					C = glm::vec3(rasterisation_bin_sizer.max_distance() / data.max_depth);
+					const auto distance = rasterisation_bin_sizer.end_of(stroke::min(unsigned(data.debug_render_bin), config::n_rasterisation_steps - 1));
+					C = glm::vec3(distance / data.max_depth);
+					if (distance == 0)
+						C = glm::vec3(0, 1.0, 0);
+					if (stroke::isnan(distance))
+						C = glm::vec3(1, 0, 0.5);
+					if (distance < 0)
+						C = glm::vec3(1, 0.5, 0);
 					T = 0;
 				} break;
 				}
