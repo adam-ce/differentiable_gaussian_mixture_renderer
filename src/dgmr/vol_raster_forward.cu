@@ -443,7 +443,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 					for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
 						const auto gaussian1d = gaussian::project_on_ray(collected_centroid[j], collected_cov3[j], ray);
 						const auto weight = gaussian1d.weight * collected_weight[j];
-						if (weight < 0.01)
+						if (weight < 0.001)
 							continue;
 						rasterisation_bin_sizer.add_gaussian(weight, gaussian1d.centre, gaussian1d.C);
 						if (rasterisation_bin_sizer.is_full()) {
@@ -526,7 +526,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 					for (auto k = 0; k < vol_raster::config::n_rasterisation_steps; ++k) {
 						auto current_bin = rasterised_data[k];
 						for (auto i = 0; i < 3; ++i) {
-							current_bin[i] /= current_bin[3] + 0.01f; // make an weighted average out of a weighted sum
+							current_bin[i] /= current_bin[3] + 0.001f; // make an weighted average out of a weighted sum
 						}
 						// Avoid numerical instabilities (see paper appendix).
 						float alpha = min(0.99f, current_bin[3]);
@@ -544,11 +544,11 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 
 						T = test_T;
 					}
-				} break;
+					break;
+				}
 				case VolRasterForwardData::RenderMode::Bins: {
-					if (unsigned(data.debug_render_bin) >= vol_raster::config::n_rasterisation_steps)
-						break;
-					auto current_bin = rasterised_data[stroke::min(unsigned(data.debug_render_bin), config::n_rasterisation_steps - 1)];
+					const auto bin = stroke::min(unsigned(data.debug_render_bin), config::n_rasterisation_steps - 1);
+					auto current_bin = rasterised_data[bin];
 					for (auto i = 0; i < 3; ++i) {
 						current_bin[i] /= current_bin[3] + 0.01f; // make an weighted average out of a weighted sum
 					}
@@ -557,9 +557,11 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 					C += glm::vec3(current_bin) * alpha * T;
 
 					T = test_T;
-				} break;
+					break;
+				}
 				case VolRasterForwardData::RenderMode::Depth: {
-					const auto distance = rasterisation_bin_sizer.end_of(stroke::min(unsigned(data.debug_render_bin), config::n_rasterisation_steps - 1));
+					const auto bin = stroke::min(unsigned(data.debug_render_bin), config::n_rasterisation_steps - 1);
+					const auto distance = rasterisation_bin_sizer.end_of(bin);
 					C = glm::vec3(distance / data.max_depth);
 					if (distance == 0)
 						C = glm::vec3(0, 1.0, 0);
@@ -568,7 +570,8 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 					if (distance < 0)
 						C = glm::vec3(1, 0.5, 0);
 					T = 0;
-				} break;
+					break;
+				}
 				}
 
 				if (!inside)
