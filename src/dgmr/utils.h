@@ -110,6 +110,19 @@ struct RasterBinSizer_1 {
 
 			fill_start = find_empty(fill_end);
 		}
+
+		// bubble sort
+		for (auto i = 0u; i < n_bins - 1; ++i) {
+			auto swapped = false;
+			for (auto j = 0u; j < n_bins - i - 1; ++j) {
+				if (bin_borders[j] > bin_borders[j + 1]) {
+					stroke::swap(bin_borders[j], bin_borders[j + 1]);
+					swapped = true;
+				}
+			}
+			if (swapped == false)
+				break;
+		}
 	}
 };
 
