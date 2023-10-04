@@ -68,8 +68,7 @@ TEST_CASE("dgmr utils: gaussian_bounds") {
 	}
 }
 
-TEST_CASE("dgmr utils: raster bin sizer") {
-
+TEST_CASE("dgmr utils: raster bin sizer 2") {
 	SECTION("start empty") {
 		const dgmr::utils::RasterBinSizer<RasterBinSizerConfig> sizer;
 		CHECK(sizer.begin_of(0) == Approx(0));
@@ -79,8 +78,91 @@ TEST_CASE("dgmr utils: raster bin sizer") {
 		CHECK(sizer.begin_of(2) == Approx(0));
 		CHECK(sizer.end_of(2) == Approx(0));
 	}
+
+	SECTION("finalise on empty sizer doesn't crash") {
+		dgmr::utils::RasterBinSizer<RasterBinSizerConfig> sizer;
+		sizer.finalise();
+	}
+
 	SECTION("bin begin and end") {
-		const dgmr::utils::RasterBinSizer<RasterBinSizerConfig> sizer = { 1.f, 2.f, 3.f, 4.f };
+		dgmr::utils::RasterBinSizer<RasterBinSizerConfig> sizer = {};
+		sizer.add_gaussian(1.52f, 8, 4);
+		sizer.finalise();
+		CHECK(sizer.begin_of(0) == Approx(0));
+		CHECK(sizer.end_of(0) == Approx(sizer.begin_of(1)));
+		CHECK(sizer.end_of(1) == Approx(sizer.begin_of(2)));
+		CHECK(sizer.end_of(2) == Approx(sizer.begin_of(3)));
+
+		CHECK(sizer.begin_of(0) <= sizer.end_of(0));
+		CHECK(sizer.begin_of(1) <= sizer.end_of(1));
+		CHECK(sizer.begin_of(2) <= sizer.end_of(2));
+		CHECK(sizer.begin_of(3) <= sizer.end_of(3));
+	}
+
+	SECTION("bin begin and end with bad gaussian order") {
+		dgmr::utils::RasterBinSizer<RasterBinSizerConfig> sizer = {};
+		sizer.add_gaussian(0.25f, 10, 2);
+		sizer.add_gaussian(0.25f, 8, 1);
+		sizer.add_gaussian(0.25f, 6, 2);
+		sizer.add_gaussian(0.25f, 4, 1);
+		sizer.add_gaussian(0.25f, 2, 2);
+		sizer.add_gaussian(0.25f, 0, 1);
+		sizer.finalise();
+		CHECK(sizer.begin_of(0) == Approx(0));
+		CHECK(sizer.end_of(0) == Approx(sizer.begin_of(1)));
+		CHECK(sizer.end_of(1) == Approx(sizer.begin_of(2)));
+		CHECK(sizer.end_of(2) == Approx(sizer.begin_of(3)));
+
+		CHECK(sizer.begin_of(0) <= sizer.end_of(0));
+		CHECK(sizer.begin_of(1) <= sizer.end_of(1));
+		CHECK(sizer.begin_of(2) <= sizer.end_of(2));
+		CHECK(sizer.begin_of(3) <= sizer.end_of(3));
+	}
+
+	SECTION("bin begin and end with only one gaussian at 0.6 opacity)") {
+		dgmr::utils::RasterBinSizer<RasterBinSizerConfig> sizer = {};
+		sizer.add_gaussian(0.6f, 10, 2);
+		sizer.finalise();
+		CHECK(sizer.begin_of(0) == Approx(0));
+		CHECK(sizer.end_of(0) == Approx(sizer.begin_of(1)));
+		CHECK(sizer.end_of(1) == Approx(sizer.begin_of(2)));
+		CHECK(sizer.end_of(2) == Approx(sizer.begin_of(3)));
+
+		CHECK(sizer.begin_of(0) <= sizer.end_of(0));
+		CHECK(sizer.begin_of(1) <= sizer.end_of(1));
+		CHECK(sizer.begin_of(2) <= sizer.end_of(2));
+		CHECK(sizer.begin_of(3) <= sizer.end_of(3));
+	}
+
+	SECTION("bin begin and end with only one gaussian at 0.3 opacity)") {
+		dgmr::utils::RasterBinSizer<RasterBinSizerConfig> sizer = {};
+		sizer.add_gaussian(0.3f, 10, 2);
+		sizer.finalise();
+		CHECK(sizer.begin_of(0) == Approx(0));
+		CHECK(sizer.end_of(0) == Approx(sizer.begin_of(1)));
+		CHECK(sizer.end_of(1) == Approx(sizer.begin_of(2)));
+		CHECK(sizer.end_of(2) == Approx(sizer.begin_of(3)));
+
+		CHECK(sizer.begin_of(0) <= sizer.end_of(0));
+		CHECK(sizer.begin_of(1) <= sizer.end_of(1));
+		CHECK(sizer.begin_of(2) <= sizer.end_of(2));
+		CHECK(sizer.begin_of(3) <= sizer.end_of(3));
+	}
+}
+
+TEST_CASE("dgmr utils: raster bin sizer 1") {
+
+	SECTION("start empty") {
+		const dgmr::utils::RasterBinSizer_1<RasterBinSizerConfig> sizer;
+		CHECK(sizer.begin_of(0) == Approx(0));
+		CHECK(sizer.end_of(0) == Approx(0));
+		CHECK(sizer.begin_of(1) == Approx(0));
+		CHECK(sizer.end_of(1) == Approx(0));
+		CHECK(sizer.begin_of(2) == Approx(0));
+		CHECK(sizer.end_of(2) == Approx(0));
+	}
+	SECTION("bin begin and end") {
+		const dgmr::utils::RasterBinSizer_1<RasterBinSizerConfig> sizer = { 1.f, 2.f, 3.f, 4.f };
 		CHECK(sizer.begin_of(0) == Approx(0));
 		CHECK(sizer.end_of(0) == Approx(1));
 		CHECK(sizer.begin_of(1) == Approx(1));
@@ -92,12 +174,12 @@ TEST_CASE("dgmr utils: raster bin sizer") {
 	}
 
 	SECTION("finalise on empty sizer doesn't crash") {
-		dgmr::utils::RasterBinSizer<RasterBinSizerConfig> sizer;
+		dgmr::utils::RasterBinSizer_1<RasterBinSizerConfig> sizer;
 		sizer.finalise();
 	}
 
 	SECTION("single opaque element") {
-		dgmr::utils::RasterBinSizer<RasterBinSizerConfig> sizer;
+		dgmr::utils::RasterBinSizer_1<RasterBinSizerConfig> sizer;
 		CHECK(!sizer.is_full());
 		sizer.add_gaussian(1.52f, 8, 4);
 		CHECK(sizer.is_full());
@@ -112,7 +194,7 @@ TEST_CASE("dgmr utils: raster bin sizer") {
 		CHECK(sizer.end_of(3) == Approx(10));
 	}
 	SECTION("enough elements for every transmission stop") {
-		dgmr::utils::RasterBinSizer<RasterBinSizerConfig> sizer;
+		dgmr::utils::RasterBinSizer_1<RasterBinSizerConfig> sizer;
 		sizer.add_gaussian(0.35f, 1.3f, 1.f); // 0.739 remains
 		CHECK(!sizer.is_full());
 		sizer.add_gaussian(0.40f, 4.7f, 0.81f); // 0.483 remains
@@ -129,7 +211,7 @@ TEST_CASE("dgmr utils: raster bin sizer") {
 		CHECK(sizer.max_distance() == Approx(10.1));
 	}
 	SECTION("one gap in transmission stops") {
-		dgmr::utils::RasterBinSizer<RasterBinSizerConfig> sizer;
+		dgmr::utils::RasterBinSizer_1<RasterBinSizerConfig> sizer;
 		sizer.add_gaussian(0.7f, 4.7f, 0.81f); // 0.393 remains, jumps over 0.75
 		sizer.add_gaussian(0.6, 6.8, 1.f); // 0.195 remains
 		sizer.add_gaussian(0.8, 9.6, 0.25f); // 0.042 remains, which is under 0.1 from the test config.
@@ -141,7 +223,7 @@ TEST_CASE("dgmr utils: raster bin sizer") {
 		CHECK(sizer.max_distance() == Approx(10.1));
 	}
 	SECTION("two gaps in transmission stops") {
-		dgmr::utils::RasterBinSizer<RasterBinSizerConfig> sizer;
+		dgmr::utils::RasterBinSizer_1<RasterBinSizerConfig> sizer;
 		sizer.add_opacity(50, 0.6); // 0.4 remains, jumps over 0.75
 		sizer.add_opacity(100, 0.9); // 0.04 remains
 		sizer.finalise();
