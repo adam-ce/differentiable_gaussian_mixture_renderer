@@ -445,7 +445,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 						const auto weight = gaussian1d.weight * collected_weight[j];
 						if (weight < 0.001)
 							continue;
-						rasterisation_bin_sizer.add_gaussian(weight, gaussian1d.centre, gaussian1d.C);
+						rasterisation_bin_sizer.add_gaussian(weight, gaussian1d.centre, gaussian1d.C + vol_raster::config::workaround_variance_add_along_ray);
 						if (rasterisation_bin_sizer.is_full()) {
 							done = true;
 							break;
@@ -485,23 +485,24 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 
 					// Iterate over current batch
 					for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
-
 						const auto gaussian1d = gaussian::project_on_ray(collected_centroid[j], collected_cov3[j], ray);
 						const auto weight = gaussian1d.weight * collected_weight[j];
-						if (gaussian1d.C <= 0)
+						const auto centroid = gaussian1d.centre;
+						const auto variance = gaussian1d.C + vol_raster::config::workaround_variance_add_along_ray;
+						if (variance <= 0)
 							continue; // todo: shouldn't happen any more in the future, after implementing AA
 						if (!(weight >= 0 && weight < 100'000)) {
 							const auto& C3 = collected_cov3[j];
-							printf("gaussian1d.C: %f, collected_cov3[j]: %f/%f/%f/%f/%f/%f, det: %f\n", gaussian1d.C, C3[0], C3[1], C3[2], C3[3], C3[4], C3[5], det(C3));
+							printf("gaussian1d.C: %f, collected_cov3[j]: %f/%f/%f/%f/%f/%f, det: %f\n", variance, C3[0], C3[1], C3[2], C3[3], C3[4], C3[5], det(C3));
 							//							printf("weight: %f, gaussian1d.weight: %f, collected_weight[j]: %f, stroke::gaussian::norm_factor(gaussian1d.C): %f, gaussian1d.C: %f\n", weight, gaussian1d.weight, collected_weight[j], stroke::gaussian::norm_factor(gaussian1d.C), gaussian1d.C);
 						}
-						if (weight * gaussian::integrate(gaussian1d.centre, gaussian1d.C, { 0, rasterisation_bin_sizer.max_distance() }) <= 0.001f) // performance critical
+						if (weight * gaussian::integrate(centroid, variance, { 0, rasterisation_bin_sizer.max_distance() }) <= 0.001f) // performance critical
 							continue;
 
-						const auto inv_variance = 1 / gaussian1d.C;
-						auto cdf_start = gaussian::cdf_inv_C(gaussian1d.centre, inv_variance, 0.f);
+						const auto inv_variance = 1 / variance;
+						auto cdf_start = gaussian::cdf_inv_C(centroid, inv_variance, 0.f);
 						for (auto k = 0u; k < vol_raster::config::n_rasterisation_steps; ++k) {
-							const auto cdf_end = gaussian::cdf_inv_C(gaussian1d.centre, inv_variance, rasterisation_bin_sizer.end_of(k));
+							const auto cdf_end = gaussian::cdf_inv_C(centroid, inv_variance, rasterisation_bin_sizer.end_of(k));
 							const auto integrated = (cdf_end - cdf_start) * weight;
 							cdf_start = cdf_end;
 							rasterised_data[k] += glm::vec4(g_rgb(collected_id[j]) * integrated, integrated);
@@ -510,7 +511,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 						// terminates too early when an intense gaussian is ordered behind many less intense ones, but its location is in front
 						// however, i didn't see artefacts of it. performance boost, but only in combination with opacity filtering.
 						// todo: in the future, we should order using the front side, and stop once we compute front sides behind max_distance.
-						opacity *= 1 - (cdf_start - gaussian::cdf_inv_C(gaussian1d.centre, inv_variance, 0.f)) * weight; // end - start again, but here cdf_tart refers to the actual end.
+						opacity *= 1 - (cdf_start - gaussian::cdf_inv_C(centroid, inv_variance, 0.f)) * weight; // end - start again, but here cdf_tart refers to the actual end.
 						if (opacity < 0.0001f) {
 							done = true;
 							break;
@@ -550,7 +551,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 					const auto bin = stroke::min(unsigned(data.debug_render_bin), config::n_rasterisation_steps - 1);
 					auto current_bin = rasterised_data[bin];
 					for (auto i = 0; i < 3; ++i) {
-						current_bin[i] /= current_bin[3] + 0.01f; // make an weighted average out of a weighted sum
+						current_bin[i] /= current_bin[3] + 0.001f; // make an weighted average out of a weighted sum
 					}
 					float alpha = min(0.99f, current_bin[3]);
 					float test_T = T * (1 - alpha);
