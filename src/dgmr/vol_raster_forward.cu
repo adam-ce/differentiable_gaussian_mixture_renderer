@@ -161,6 +161,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 	const auto n_gaussians = data.gm_weights.size<0>();
 	const float focal_y = fb_height / (2.0f * data.tan_fovy);
 	const float focal_x = fb_width / (2.0f * data.tan_fovx);
+        const auto aa_distance_multiplier = (0.5f * data.tan_fovx * 2) / fb_width;
 
 	constexpr dim3 render_block_dim = { render_block_width, render_block_height };
 	constexpr auto render_block_size = render_block_width * render_block_height;
@@ -187,6 +188,9 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 	auto g_cov3d_data = whack::make_tensor<stroke::Cov3<float>>(whack::Location::Device, n_gaussians);
 	auto g_cov3d = g_cov3d_data.view();
 
+	auto g_filtered_weights_data = whack::make_tensor<float>(whack::Location::Device, n_gaussians);
+	auto g_filtered_weights = g_filtered_weights_data.view();
+
 	auto g_tiles_touched_data = whack::make_tensor<uint32_t>(whack::Location::Device, n_gaussians);
 	auto g_tiles_touched = g_tiles_touched_data.view();
 
@@ -209,12 +213,14 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 				if ((data.view_matrix * glm::vec4(centroid, 1.f)).z < 0.2) // adam doesn't understand, why projection matrix > 0 isn't enough.
 					return;
 
-				const auto cov3d = utils::compute_cov(data.gm_cov_scales(idx), data.gm_cov_rotations(idx));
+                                const auto cov3d = utils::compute_cov(data.gm_cov_scales(idx), data.gm_cov_rotations(idx));
 
-				// todo store a copy of weight including the weight factor.
-				const auto [filtered_cov_3d, aa_weight_factor] = utils::filter_for_aa(centroid, cov3d, data.cam_poition);
-				const auto projected_centroid = project(centroid, data.proj_matrix);
-				if (projected_centroid.z < 0.0)
+                                // todo store a copy of weight including the weight factor.
+                                //				const auto filter_kernel_size = glm::distance(centroid, data.cam_poition) * aa_distance_multiplier;
+                                const auto filter_kernel_size = glm::distance(centroid, data.cam_poition) * aa_distance_multiplier;
+                                const auto [filtered_cov_3d, aa_weight_factor] = utils::convolve(cov3d, filter_kernel_size * filter_kernel_size);
+                                const auto projected_centroid = project(centroid, data.proj_matrix);
+                                if (projected_centroid.z < 0.0)
 					return;
 
 				auto cov2d = computeCov2D(centroid, focal_x, focal_y, data.tan_fovx, data.tan_fovy, filtered_cov_3d, data.view_matrix);
@@ -222,15 +228,13 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 				// anti aliasing:
 				// Apply low-pass filter: convolve with a gaussian with variance 0.3, i.e. every Gaussian should be at least
 				// one pixel wide/high.
-				auto opacity = data.gm_weights(idx);
-				{
-					constexpr float h_var = 0.3f;
-					const auto pre_filter_det = det(cov2d);
-					cov2d += stroke::Cov2<float>(h_var);
-					const auto post_filter_det = det(cov2d);
-					// gaussians are not normalised, we need this additional factor. without it, we would produce energy on small gaussians.
-					opacity *= sqrt(max(0.000025f, pre_filter_det / post_filter_det));
-				}
+				constexpr float h_var = 0.3f;
+				const auto pre_filter_det = det(cov2d);
+				cov2d += stroke::Cov2<float>(h_var);
+				const auto post_filter_det = det(cov2d);
+				// gaussians are not normalised, we need this additional factor. without it, we would produce energy on small gaussians.
+				const auto aa_2d_weight_factor = sqrt(max(0.000025f, pre_filter_det / post_filter_det));
+				g_filtered_weights(idx) = aa_weight_factor * data.gm_weights(idx);
 
 				// using the more aggressive computation for calculating overlapping tiles:
 				{
@@ -431,10 +435,10 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 						assert(coll_id < n_gaussians);
 						collected_id[thread_rank] = coll_id;
 						collected_centroid[thread_rank] = data.gm_centroids(coll_id);
-						collected_cov3[thread_rank] = g_cov3d(coll_id);
-						collected_weight[thread_rank] = data.gm_weights(coll_id); // todo: aa factor missing
-					}
-					__syncthreads();
+                                                collected_cov3[thread_rank] = g_cov3d(coll_id);
+                                                collected_weight[thread_rank] = g_filtered_weights(coll_id);
+                                        }
+                                        __syncthreads();
 
 					if (done)
 						continue;
@@ -443,7 +447,9 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 					for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
 						const auto gaussian1d = gaussian::project_on_ray(collected_centroid[j], collected_cov3[j], ray);
 						const auto weight = gaussian1d.weight * collected_weight[j];
-						if (weight < 0.001)
+						if (weight < 0.001 || weight > 1'000)
+							continue;
+						if (gaussian1d.C + vol_raster::config::workaround_variance_add_along_ray <= 0)
 							continue;
 						rasterisation_bin_sizer.add_gaussian(weight, gaussian1d.centre, gaussian1d.C + vol_raster::config::workaround_variance_add_along_ray);
 						if (rasterisation_bin_sizer.is_full()) {
@@ -475,8 +481,8 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 						collected_id[thread_rank] = coll_id;
 						collected_centroid[thread_rank] = data.gm_centroids(coll_id);
 						collected_cov3[thread_rank] = g_cov3d(coll_id);
-						collected_weight[thread_rank] = data.gm_weights(coll_id); // todo: aa factor missing
-					}
+                                                collected_weight[thread_rank] = g_filtered_weights(coll_id);
+                                        }
 					// block.sync();
 					__syncthreads();
 
@@ -485,15 +491,15 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data) {
 
 					// Iterate over current batch
 					for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
-						const auto gaussian1d = gaussian::project_on_ray(collected_centroid[j], collected_cov3[j], ray);
+						const auto cov = collected_cov3[j];
+						const auto gaussian1d = gaussian::project_on_ray(collected_centroid[j], cov, ray);
 						const auto weight = gaussian1d.weight * collected_weight[j];
 						const auto centroid = gaussian1d.centre;
 						const auto variance = gaussian1d.C + vol_raster::config::workaround_variance_add_along_ray;
-						if (variance <= 0)
-							continue; // todo: shouldn't happen any more in the future, after implementing AA
+						if (variance <= 0 || stroke::isnan(variance) || stroke::isnan(weight) || weight > 100'000)
+							continue; // todo: shouldn't happen any more after implementing AA?
 						if (!(weight >= 0 && weight < 100'000)) {
-							const auto& C3 = collected_cov3[j];
-							printf("gaussian1d.C: %f, collected_cov3[j]: %f/%f/%f/%f/%f/%f, det: %f\n", variance, C3[0], C3[1], C3[2], C3[3], C3[4], C3[5], det(C3));
+							printf("weight: %f, gaussian1d.C: %f, collected_cov3[j]: %f/%f/%f/%f/%f/%f, det: %f\n", weight, variance, cov[0], cov[1], cov[2], cov[3], cov[4], cov[5], det(cov));
 							//							printf("weight: %f, gaussian1d.weight: %f, collected_weight[j]: %f, stroke::gaussian::norm_factor(gaussian1d.C): %f, gaussian1d.C: %f\n", weight, gaussian1d.weight, collected_weight[j], stroke::gaussian::norm_factor(gaussian1d.C), gaussian1d.C);
 						}
 						if (weight * gaussian::integrate(centroid, variance, { 0, rasterisation_bin_sizer.max_distance() }) <= 0.001f) // performance critical

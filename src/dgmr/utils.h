@@ -168,7 +168,8 @@ public:
 		};
 
 		assert(!stroke::isnan(centre));
-		assert(!stroke::isnan(variance) && variance > 0);
+		assert(!stroke::isnan(variance));
+		assert(variance > 0);
 
 		const auto SD = stroke::sqrt(variance);
 		const auto alpha = stroke::min(0.999f, opacity * gaussian::integrate(centre, variance, { 0, centre + SD * config::gaussian_relevance_sigma }));
@@ -266,10 +267,13 @@ struct FilteredCov3AndWeight {
 	float weight_factor;
 };
 
-STROKE_DEVICES_INLINE FilteredCov3AndWeight filter_for_aa(const glm::vec3& centroid, const stroke::Cov3<float>& cov, const glm::vec3& camera_position) {
-	const auto distance = glm::distance(centroid, camera_position);
-	const auto new_cov = cov + stroke::Cov3(0.0000001f + 0.000005f * distance);
-	return { new_cov, 1.f };
+STROKE_DEVICES_INLINE FilteredCov3AndWeight convolve(const stroke::Cov3<float>& cov, float kernel_size)
+{
+        const auto new_cov = cov + stroke::Cov3<float>(kernel_size);
+        // i have the feeling, that this is fishy. doing a 3d convolution, while we probably should be doing 2d, parallel to screen. 3d would increase mixing.
+        // leaving out the correction factor for now, which is incorrect as well.
+        return { new_cov, 1.f };
+        //        return { new_cov, stroke::sqrt(stroke::max(0.000025f, float(det(cov) / det(new_cov)))) };
 }
 
 STROKE_DEVICES_INLINE stroke::geometry::Aabb1f gaussian_to_point_distance_bounds(
