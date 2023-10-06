@@ -168,7 +168,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
     const auto n_gaussians = data.gm_weights.size<0>();
     const float focal_y = fb_height / (2.0f * data.tan_fovy);
     const float focal_x = fb_width / (2.0f * data.tan_fovx);
-    const auto aa_distance_multiplier = (0.5f * data.tan_fovx * 2) / fb_width;
+    const auto aa_distance_multiplier = (0.55f * data.tan_fovx * 2) / fb_width;
 
     constexpr dim3 render_block_dim = { render_block_width, render_block_height };
     constexpr auto render_block_size = render_block_width * render_block_height;
@@ -224,8 +224,11 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
 
                 // todo store a copy of weight including the weight factor.
                 //				const auto filter_kernel_size = glm::distance(centroid, data.cam_poition) * aa_distance_multiplier;
-                const auto filter_kernel_size = stroke::sq(glm::distance(centroid, data.cam_poition) * aa_distance_multiplier);
-                const auto [filtered_cov_3d, aa_weight_factor] = utils::convolve(cov3d, stroke::Cov3<float>(0.0000001f + filter_kernel_size));
+                const auto filter_kernel_size = glm::distance(centroid, data.cam_poition) * aa_distance_multiplier;
+                //                const auto filter_kernel = stroke::Cov3<float>(0.0000001f + stroke::sq(filter_kernel_size));
+                const auto filter_kernel = utils::orient_filter_kernel(
+                    { .direction = glm::normalize(data.cam_poition - centroid), .kernel_scales = { filter_kernel_size, filter_kernel_size, 0 } });
+                const auto [filtered_cov_3d, aa_weight_factor] = utils::convolve(cov3d, filter_kernel);
                 const auto projected_centroid = project(centroid, data.proj_matrix);
                 if (projected_centroid.z < 0.0)
                     return;

@@ -275,6 +275,28 @@ STROKE_DEVICES_INLINE stroke::Cov3<float> compute_cov(const glm::vec3& scale, co
     return stroke::Cov3<float>(RS * transpose(RS));
 }
 
+STROKE_DEVICES_INLINE glm::mat3 rotation_matrix_from(const glm::vec3& direction)
+{
+    assert(stroke::abs(glm::length(direction) - 1) < 0.0001f);
+    const auto dot_z_abs = stroke::abs(dot(direction, glm::vec3(0, 0, 1)));
+    const auto dot_x_abs = stroke::abs(dot(direction, glm::vec3(1, 0, 0)));
+
+    const auto other_1 = glm::normalize(glm::cross(direction, dot_z_abs < dot_x_abs ? glm::vec3(0, 0, 1) : glm::vec3(1, 0, 0)));
+    const auto other_2 = glm::normalize(glm::cross(other_1, direction));
+
+    return glm::mat3(other_1, other_2, direction);
+}
+
+struct DirectionAndKernelScales {
+    const glm::vec3& direction;
+    const glm::vec3& kernel_scales;
+};
+STROKE_DEVICES_INLINE stroke::Cov3<float> orient_filter_kernel(const DirectionAndKernelScales& p)
+{
+    const auto RS = rotation_matrix_from(p.direction) * glm::mat3(p.kernel_scales.x, 0, 0, 0, p.kernel_scales.y, 0, 0, 0, p.kernel_scales.z);
+    return stroke::Cov3<float>(RS * transpose(RS));
+}
+
 // todo: this doesn't use resolution or fov. need to compute convolution size based on that. + also need to compute weight adjustment.
 struct FilteredCov3AndWeight {
     stroke::Cov3<float> cov;
