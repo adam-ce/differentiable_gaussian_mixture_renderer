@@ -281,13 +281,11 @@ struct FilteredCov3AndWeight {
     float weight_factor;
 };
 
-STROKE_DEVICES_INLINE FilteredCov3AndWeight convolve(const stroke::Cov3<float>& cov, float kernel_size)
+// kernel cov comes from a normalised gaussian, i.e., it integrates to 1 and has no explicit weight
+STROKE_DEVICES_INLINE FilteredCov3AndWeight convolve(const stroke::Cov3<float>& cov, const stroke::Cov3<float>& kernel_cov)
 {
-    const auto new_cov = cov + stroke::Cov3<float>(kernel_size);
-    // i have the feeling, that this is fishy. doing a 3d convolution, while we probably should be doing 2d, parallel to screen. 3d would increase mixing.
-    // leaving out the correction factor for now, which is incorrect as well.
-    return { new_cov, 1.f };
-    //        return { new_cov, stroke::sqrt(stroke::max(0.000025f, float(det(cov) / det(new_cov)))) };
+    const auto new_cov = cov + kernel_cov;
+    return { new_cov, stroke::sqrt(stroke::max(0.000025f, float(det(cov) / det(new_cov)))) };
 }
 
 STROKE_DEVICES_INLINE stroke::geometry::Aabb1f gaussian_to_point_distance_bounds(

@@ -224,8 +224,8 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
 
                 // todo store a copy of weight including the weight factor.
                 //				const auto filter_kernel_size = glm::distance(centroid, data.cam_poition) * aa_distance_multiplier;
-                const auto filter_kernel_size = glm::distance(centroid, data.cam_poition) * aa_distance_multiplier;
-                const auto [filtered_cov_3d, aa_weight_factor] = utils::convolve(cov3d, filter_kernel_size * filter_kernel_size);
+                const auto filter_kernel_size = stroke::sq(glm::distance(centroid, data.cam_poition) * aa_distance_multiplier);
+                const auto [filtered_cov_3d, aa_weight_factor] = utils::convolve(cov3d, stroke::Cov3<float>(0.0000001f + filter_kernel_size));
                 const auto projected_centroid = project(centroid, data.proj_matrix);
                 if (projected_centroid.z < 0.0)
                     return;
