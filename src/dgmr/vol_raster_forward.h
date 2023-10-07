@@ -65,6 +65,7 @@ namespace vol_raster {
         static constexpr unsigned n_rasterisation_steps = 16;
         static constexpr float transmission_threshold = 0.001f;
         static constexpr float gaussian_relevance_sigma = 3.f;
+        static constexpr bool workaround_use_screen_aa_conv_factor = true;
         static constexpr float workaround_variance_add_along_ray = 0.01f; // reduces artefacts in small details, adds transparency.
     };
 } // namespace vol_raster

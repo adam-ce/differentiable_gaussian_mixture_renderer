@@ -244,7 +244,10 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                 const auto post_filter_det = det(cov2d);
                 // gaussians are not normalised, we need this additional factor. without it, we would produce energy on small gaussians.
                 const auto aa_2d_weight_factor = sqrt(max(0.000025f, pre_filter_det / post_filter_det));
-                g_filtered_weights(idx) = aa_weight_factor * data.gm_weights(idx);
+                if (vol_raster::config::workaround_use_screen_aa_conv_factor)
+                    g_filtered_weights(idx) = aa_2d_weight_factor * data.gm_weights(idx);
+                else
+                    g_filtered_weights(idx) = aa_weight_factor * data.gm_weights(idx);
 
                 // using the more aggressive computation for calculating overlapping tiles:
                 {
