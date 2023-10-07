@@ -31,6 +31,12 @@ using namespace dgmr::vol_raster;
 namespace gaussian = stroke::gaussian;
 
 // my own:
+STROKE_DEVICES glm::vec3 clamp_cov_scales(const glm::vec3& cov_scales)
+{
+    const auto min_value = stroke::max(glm::compAdd(cov_scales) / 3, 0.05f) * 0.02f;
+    return glm::clamp(cov_scales, min_value, 100.f);
+}
+
 STROKE_DEVICES glm::vec3 project(const glm::vec3& point, const glm::mat4& projection_matrix)
 {
     auto pp = projection_matrix * glm::vec4(point, 1.f);
@@ -220,7 +226,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                 if ((data.view_matrix * glm::vec4(centroid, 1.f)).z < 0.2) // adam doesn't understand, why projection matrix > 0 isn't enough.
                     return;
 
-                const auto cov3d = utils::compute_cov(data.gm_cov_scales(idx), data.gm_cov_rotations(idx));
+                const auto cov3d = utils::compute_cov(clamp_cov_scales(data.gm_cov_scales(idx)), data.gm_cov_rotations(idx));
 
                 // todo store a copy of weight including the weight factor.
                 //				const auto filter_kernel_size = glm::distance(centroid, data.cam_poition) * aa_distance_multiplier;
