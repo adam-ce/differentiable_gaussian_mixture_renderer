@@ -141,6 +141,7 @@ class RasterBinSizer {
     whack::Array<float, n_bins> centroids = {};
     whack::Array<float, n_bins> SDs = {};
     float transmission = 1.f;
+    float max_depth = 0.f;
 
 public:
     STROKE_DEVICES_INLINE float begin_of(unsigned i) const
@@ -153,7 +154,7 @@ public:
     STROKE_DEVICES_INLINE float end_of(unsigned i) const
     {
         if (i == n_bins - 1)
-            return centroids[i] + SDs[i];
+            return max_depth;
 
         assert(centroids[i] <= centroids[i + 1]);
 
@@ -194,6 +195,7 @@ public:
         weight_sum[bin] += alpha;
         centroids[bin] += centre * alpha;
         SDs[bin] += SD * alpha;
+        max_depth = stroke::max(centre + 3 * stroke::sqrt(variance), max_depth);
     }
     STROKE_DEVICES_INLINE void finalise()
     {
