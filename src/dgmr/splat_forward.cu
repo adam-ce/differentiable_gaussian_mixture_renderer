@@ -214,20 +214,10 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
                 if (projected_centroid.z < 0.0)
                     return;
 
-                auto cov2d = computeCov2D(centroid, focal_x, focal_y, data.tan_fovx, data.tan_fovy, cov3d, data.view_matrix);
-
-                // anti aliasing:
-                // Apply low-pass filter: convolve with a gaussian with variance 0.3, i.e. every Gaussian should be at least
-                // one pixel wide/high.
-                auto opacity = data.gm_weights(idx);
-                {
-                    constexpr float h_var = 0.3f;
-                    const auto pre_filter_det = det(cov2d);
-                    cov2d += stroke::Cov2<float>(h_var);
-                    const auto post_filter_det = det(cov2d);
-                    // gaussians are not normalised, we need this additional factor. without it, we would produce energy on small gaussians.
-                    opacity *= sqrt(max(0.000025f, pre_filter_det / post_filter_det));
-                }
+                // low pass filter to combat aliasing
+                const auto cov2d = computeCov2D(centroid, focal_x, focal_y, data.tan_fovx, data.tan_fovy, cov3d, data.view_matrix);
+                const auto [filtered_cov_2d, aa_weight_factor] = utils::convolve(cov2d, stroke::Cov2<float>(0.3f));
+                const auto opacity = data.gm_weights(idx) * aa_weight_factor;
 
                 // using the more aggressive computation for calculating overlapping tiles:
                 {
@@ -237,7 +227,7 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
                     // glm::vec2 point_image = ((glm::vec2(projected_centroid) + 1.f) * glm::vec2(fb_width, fb_height) - 1.f) * 0.5f; // same as ndc2Pix
                     glm::vec2 point_image = { ndc2Pix(projected_centroid.x, fb_width), ndc2Pix(projected_centroid.y, fb_height) }; // todo: ndc2Pix looks strange to me.
 
-                    const glm::uvec2 my_rect = { (int)ceil(3.f * sqrt(cov2d[0])), (int)ceil(3.f * sqrt(cov2d[2])) };
+                    const glm::uvec2 my_rect = { (int)ceil(3.f * sqrt(filtered_cov_2d[0])), (int)ceil(3.f * sqrt(filtered_cov_2d[2])) };
                     g_rects(idx) = my_rect;
                     glm::uvec2 rect_min, rect_max;
                     getRect(point_image, my_rect, &rect_min, &rect_max, render_grid_dim);
@@ -255,7 +245,7 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
                 g_rgb(idx) = computeColorFromSH(data.sh_degree, centroid, data.cam_poition, data.gm_sh_params(idx), &g_rgb_sh_clamped(idx));
 
                 // Inverse 2D covariance and opacity neatly pack into one float4
-                const auto conic2d = inverse(cov2d);
+                const auto conic2d = inverse(filtered_cov_2d);
                 g_conic_opacity(idx) = { conic2d, opacity };
             });
     }

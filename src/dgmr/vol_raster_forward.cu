@@ -174,7 +174,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
     const auto n_gaussians = data.gm_weights.size<0>();
     const float focal_y = fb_height / (2.0f * data.tan_fovy);
     const float focal_x = fb_width / (2.0f * data.tan_fovx);
-    const auto aa_distance_multiplier = (0.55f * data.tan_fovx * 2) / fb_width;
+    const auto aa_distance_multiplier = (config::filter_kernel_SD * data.tan_fovx * 2) / fb_width;
 
     constexpr dim3 render_block_dim = { render_block_width, render_block_height };
     constexpr auto render_block_size = render_block_width * render_block_height;
@@ -225,35 +225,19 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                 const auto centroid = data.gm_centroids(idx);
                 if ((data.view_matrix * glm::vec4(centroid, 1.f)).z < 0.2) // adam doesn't understand, why projection matrix > 0 isn't enough.
                     return;
-
-                const auto cov3d = utils::compute_cov(clamp_cov_scales(data.gm_cov_scales(idx)), data.gm_cov_rotations(idx));
-
-                // todo store a copy of weight including the weight factor.
-                //				const auto filter_kernel_size = glm::distance(centroid, data.cam_poition) * aa_distance_multiplier;
-                const auto filter_kernel_size = glm::distance(centroid, data.cam_poition) * aa_distance_multiplier;
-                //                const auto filter_kernel = stroke::Cov3<float>(0.0000001f + stroke::sq(filter_kernel_size));
-                const auto filter_kernel = utils::orient_filter_kernel(
-                    { .direction = glm::normalize(data.cam_poition - centroid), .kernel_scales = { filter_kernel_size, filter_kernel_size, 0 } });
-                const auto [filtered_cov_3d, aa_weight_factor] = utils::convolve(cov3d, filter_kernel);
                 const auto projected_centroid = project(centroid, data.proj_matrix);
                 if (projected_centroid.z < 0.0)
                     return;
 
-                auto cov2d = computeCov2D(centroid, focal_x, focal_y, data.tan_fovx, data.tan_fovy, filtered_cov_3d, data.view_matrix);
+                const auto cov3d = utils::compute_cov(clamp_cov_scales(data.gm_cov_scales(idx)), data.gm_cov_rotations(idx));
 
-                // anti aliasing:
-                // Apply low-pass filter: convolve with a gaussian with variance 0.3, i.e. every Gaussian should be at least
-                // one pixel wide/high.
-                constexpr float h_var = 0.3f;
-                const auto pre_filter_det = det(cov2d);
-                cov2d += stroke::Cov2<float>(h_var);
-                const auto post_filter_det = det(cov2d);
-                // gaussians are not normalised, we need this additional factor. without it, we would produce energy on small gaussians.
-                const auto aa_2d_weight_factor = sqrt(max(0.000025f, pre_filter_det / post_filter_det));
-                if (vol_raster::config::workaround_use_screen_aa_conv_factor)
-                    g_filtered_weights(idx) = aa_2d_weight_factor * data.gm_weights(idx);
-                else
-                    g_filtered_weights(idx) = aa_weight_factor * data.gm_weights(idx);
+                // low pass filter to combat aliasing
+                const auto filter_kernel_size = glm::distance(centroid, data.cam_poition) * aa_distance_multiplier;
+                const auto filter_kernel = utils::orient_filter_kernel<float>({ .direction = glm::normalize(data.cam_poition - centroid), .kernel_scales = { filter_kernel_size, filter_kernel_size, 0 } });
+                const auto filtered_cov_3d = cov3d + filter_kernel;
+                const auto cov2d = computeCov2D(centroid, focal_x, focal_y, data.tan_fovx, data.tan_fovy, cov3d, data.view_matrix);
+                const auto [filtered_cov_2d, aa_weight_factor] = utils::convolve(cov2d, stroke::Cov2<float>(config::filter_kernel_SD * config::filter_kernel_SD));
+                g_filtered_weights(idx) = aa_weight_factor * data.gm_weights(idx);
 
                 // using the more aggressive computation for calculating overlapping tiles:
                 {
@@ -263,7 +247,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                     // glm::vec2 point_image = ((glm::vec2(projected_centroid) + 1.f) * glm::vec2(fb_width, fb_height) - 1.f) * 0.5f; // same as ndc2Pix
                     glm::vec2 point_image = { ndc2Pix(projected_centroid.x, fb_width), ndc2Pix(projected_centroid.y, fb_height) }; // todo: ndc2Pix looks strange to me.
 
-                    const glm::uvec2 my_rect = { (int)ceil(3.f * sqrt(cov2d[0])), (int)ceil(3.f * sqrt(cov2d[2])) };
+                    const glm::uvec2 my_rect = { (int)ceil(3.f * sqrt(filtered_cov_2d[0])), (int)ceil(3.f * sqrt(filtered_cov_2d[2])) };
                     g_rects(idx) = my_rect;
                     glm::uvec2 rect_min, rect_max;
                     getRect(point_image, my_rect, &rect_min, &rect_max, render_grid_dim);

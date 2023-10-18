@@ -275,39 +275,48 @@ STROKE_DEVICES_INLINE stroke::Cov3<float> compute_cov(const glm::vec3& scale, co
     return stroke::Cov3<float>(RS * transpose(RS));
 }
 
-STROKE_DEVICES_INLINE glm::mat3 rotation_matrix_from(const glm::vec3& direction)
+template <typename scalar_t>
+STROKE_DEVICES_INLINE glm::mat<3, 3, scalar_t> rotation_matrix_from(const glm::vec<3, scalar_t>& direction)
 {
+    using Vec = glm::vec<3, scalar_t>;
+    using Mat = glm::mat<3, 3, scalar_t>;
     assert(stroke::abs(glm::length(direction) - 1) < 0.0001f);
-    const auto dot_z_abs = stroke::abs(dot(direction, glm::vec3(0, 0, 1)));
-    const auto dot_x_abs = stroke::abs(dot(direction, glm::vec3(1, 0, 0)));
+    const auto dot_z_abs = stroke::abs(dot(direction, Vec(0, 0, 1)));
+    const auto dot_x_abs = stroke::abs(dot(direction, Vec(1, 0, 0)));
 
-    const auto other_1 = glm::normalize(glm::cross(direction, dot_z_abs < dot_x_abs ? glm::vec3(0, 0, 1) : glm::vec3(1, 0, 0)));
+    const auto other_1 = glm::normalize(glm::cross(direction, dot_z_abs < dot_x_abs ? Vec(0, 0, 1) : Vec(1, 0, 0)));
     const auto other_2 = glm::normalize(glm::cross(other_1, direction));
 
-    return glm::mat3(other_1, other_2, direction);
+    return Mat(other_1, other_2, direction);
 }
 
+template <typename scalar_t>
 struct DirectionAndKernelScales {
-    const glm::vec3& direction;
-    const glm::vec3& kernel_scales;
+    const glm::vec<3, scalar_t>& direction;
+    const glm::vec<3, scalar_t>& kernel_scales;
 };
-STROKE_DEVICES_INLINE stroke::Cov3<float> orient_filter_kernel(const DirectionAndKernelScales& p)
+
+template <typename scalar_t>
+STROKE_DEVICES_INLINE stroke::Cov3<scalar_t> orient_filter_kernel(const DirectionAndKernelScales<scalar_t>& p)
 {
-    const auto RS = rotation_matrix_from(p.direction) * glm::mat3(p.kernel_scales.x, 0, 0, 0, p.kernel_scales.y, 0, 0, 0, p.kernel_scales.z);
-    return stroke::Cov3<float>(RS * transpose(RS));
+    using Vec = glm::vec<3, scalar_t>;
+    using Mat = glm::mat<3, 3, scalar_t>;
+    const auto RS = rotation_matrix_from(Vec(p.direction)) * Mat(p.kernel_scales.x, 0, 0, 0, p.kernel_scales.y, 0, 0, 0, p.kernel_scales.z);
+    return stroke::Cov3<scalar_t>(RS * transpose(RS));
 }
 
-// todo: this doesn't use resolution or fov. need to compute convolution size based on that. + also need to compute weight adjustment.
-struct FilteredCov3AndWeight {
-    stroke::Cov3<float> cov;
+template <glm::length_t n_dims, typename scalar_t>
+struct FilteredCovAndWeight {
+    stroke::Cov<n_dims, scalar_t> cov;
     float weight_factor;
 };
 
 // kernel cov comes from a normalised gaussian, i.e., it integrates to 1 and has no explicit weight
-STROKE_DEVICES_INLINE FilteredCov3AndWeight convolve(const stroke::Cov3<float>& cov, const stroke::Cov3<float>& kernel_cov)
+template <glm::length_t n_dims, typename scalar_t>
+STROKE_DEVICES_INLINE FilteredCovAndWeight<n_dims, scalar_t> convolve(const stroke::Cov<n_dims, scalar_t>& cov, const stroke::Cov<n_dims, scalar_t>& kernel_cov)
 {
     const auto new_cov = cov + kernel_cov;
-    return { new_cov, stroke::sqrt(stroke::max(0.000025f, float(det(cov) / det(new_cov)))) };
+    return { stroke::Cov<n_dims, scalar_t>(new_cov), float(stroke::sqrt(stroke::max(scalar_t(0.000025), scalar_t(det(cov) / det(new_cov))))) };
 }
 
 STROKE_DEVICES_INLINE stroke::geometry::Aabb1f gaussian_to_point_distance_bounds(
