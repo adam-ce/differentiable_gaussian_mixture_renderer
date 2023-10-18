@@ -33,8 +33,9 @@ namespace gaussian = stroke::gaussian;
 // my own:
 STROKE_DEVICES glm::vec3 clamp_cov_scales(const glm::vec3& cov_scales)
 {
-    const auto min_value = stroke::max(glm::compAdd(cov_scales) / 3, 0.05f) * 0.02f;
-    return glm::clamp(cov_scales, min_value, 100.f);
+    const auto max_value = stroke::min(50.f, glm::compMax(cov_scales));
+    const auto min_value = max_value * 0.01f;
+    return glm::clamp(cov_scales, min_value, max_value);
 }
 
 STROKE_DEVICES glm::vec3 project(const glm::vec3& point, const glm::mat4& projection_matrix)
