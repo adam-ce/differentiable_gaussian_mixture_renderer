@@ -517,15 +517,22 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                             cdf_start = cdf_end;
                             rasterised_data[k] += glm::vec4(g_rgb(collected_id[j]) * integrated, integrated);
                         }
+                        //                        const auto inv_variance = 1 / variance;
+                        //                        auto cdf_start = gaussian::cdf_inv_C(centroid, inv_variance, 0.f);
+                        //                        for (auto k = 0u; k < vol_raster::config::n_rasterisation_steps; ++k) {
+                        //                            if (centroid > rasterisation_bin_sizer.begin_of(k) && centroid < rasterisation_bin_sizer.end_of(k))
+                        //                                rasterised_data[k] += glm::vec4(g_rgb(collected_id[j]) * weight, weight);
+                        //                        }
 
                         // terminates too early when an intense gaussian is ordered behind many less intense ones, but its location is in front
-                        // however, i didn't see artefacts of it. performance boost, but only in combination with opacity filtering.
+                        // it does produce artefacts, e.g. onion rings in the hohe veitsch scene.
+                        // it also gives a performance boost, but only in combination with opacity filtering.
                         // todo: in the future, we should order using the front side, and stop once we compute front sides behind max_distance.
-                        opacity *= 1 - (cdf_start - gaussian::cdf_inv_C(centroid, inv_variance, 0.f)) * weight; // end - start again, but here cdf_tart refers to the actual end.
-                        if (opacity < 0.0001f) {
-                            done = true;
-                            break;
-                        }
+                        //                        opacity *= 1 - (cdf_start - gaussian::cdf_inv_C(centroid, inv_variance, 0.f)) * weight; // end - start again, but here cdf_tart refers to the actual end.
+                        //                        if (opacity < 0.0001f) {
+                        //                            done = true;
+                        //                            break;
+                        //                        }
                     }
                 }
 
