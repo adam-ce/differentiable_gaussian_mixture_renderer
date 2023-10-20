@@ -17,6 +17,7 @@
  *****************************************************************************/
 
 #include "constants.h"
+#include "raster_bin_sizers.h"
 #include "utils.h"
 #include "vol_raster_forward.h"
 
