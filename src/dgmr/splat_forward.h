@@ -58,5 +58,11 @@ struct SplatForwardData {
     bool debug = true;
 };
 
+namespace splat {
+    struct config {
+        static constexpr unsigned n_splat_reorder_buffer_size = 16;
+    };
+} // namespace splat
+
 Statistics splat_forward(SplatForwardData& forward_data);
 } // namespace dgmr

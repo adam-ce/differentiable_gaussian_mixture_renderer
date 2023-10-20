@@ -27,6 +27,7 @@
 
 namespace {
 using namespace dgmr;
+namespace gaussian = stroke::gaussian;
 
 // my own:
 STROKE_DEVICES glm::vec3 project(const glm::vec3& point, const glm::mat4& projection_matrix)
@@ -190,6 +191,9 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
     auto g_tiles_touched_data = whack::make_tensor<uint32_t>(whack::Location::Device, n_gaussians);
     auto g_tiles_touched = g_tiles_touched_data.view();
 
+    auto g_cov3d_data = whack::make_tensor<stroke::Cov3<float>>(whack::Location::Device, n_gaussians);
+    auto g_cov3d = g_cov3d_data.view();
+
     // preprocess, run per Gaussian
     {
         const dim3 block_dim = { 128 };
@@ -247,6 +251,7 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
                 // Inverse 2D covariance and opacity neatly pack into one float4
                 const auto conic2d = inverse(filtered_cov_2d);
                 g_conic_opacity(idx) = { conic2d, opacity };
+                g_cov3d(idx) = stroke::inverse(cov3d);
             });
     }
 
@@ -364,6 +369,8 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
     // render
     // Let each tile blend its range of Gaussians independently in parallel
     {
+        const auto inversed_projectin_matrix = glm::inverse(data.proj_matrix);
+
         // Main rasterization method. Collaboratively works on one tile per
         // block, each thread treats one pixel. Alternates between fetching
         // and rasterizing data.
@@ -377,6 +384,11 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
                 const glm::uvec2 pix_max = min(pix_min + glm::uvec2(whack_blockDim.x, whack_blockDim.y), glm::uvec2(fb_width, fb_height));
                 const glm::uvec2 pix = pix_min + glm::uvec2(whack_threadIdx.x, whack_threadIdx.y);
                 const unsigned thread_rank = whack_blockDim.x * whack_threadIdx.y + whack_threadIdx.x;
+                const glm::vec2 pix_ndc = glm::vec2(pix * glm::uvec2(2)) / glm::vec2(fb_width, fb_height) - glm::vec2(1);
+                auto view_at_world = inversed_projectin_matrix * glm::vec4(pix_ndc, -1, 1.0);
+                view_at_world /= view_at_world.w;
+
+                const auto ray = stroke::Ray<3, float> { data.cam_poition, glm::normalize(glm::vec3(view_at_world) - data.cam_poition) };
 
                 // Check if this thread is associated with a valid pixel or outside.
                 bool inside = pix.x < fb_width && pix.y < fb_height;
@@ -395,6 +407,39 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
                 // Initialize helper variables
                 float T = 1.0f;
                 glm::vec3 C = glm::vec3(0);
+                struct DistDataPair {
+                    float dist;
+                    float alpha;
+                    glm::vec3 colour;
+                };
+
+                whack::Array<DistDataPair, splat::config::n_splat_reorder_buffer_size> reorder_buffer;
+                unsigned reorder_buffer_size = 0;
+
+                const auto add_contribution = [&](float alpha, glm::vec3 colour) {
+                    // Eq. (3) from 3D Gaussian splatting paper.
+                    C += colour * alpha * T;
+                    T = T * (1 - alpha);
+                };
+
+                const auto reorder_gaussian = [&](const DistDataPair& d) {
+                    if (reorder_buffer_size < reorder_buffer.size()) {
+                        reorder_buffer[reorder_buffer_size] = d;
+                        reorder_buffer_size++;
+                        return DistDataPair { 0, 0, { 0, 0, 0 } };
+                    }
+                    float min_dist = reorder_buffer[0].dist;
+                    float min_dist_id = 0;
+                    for (unsigned i = 1; i < reorder_buffer.size(); ++i) {
+                        if (reorder_buffer[i].dist < min_dist) {
+                            min_dist = reorder_buffer[i].dist;
+                            min_dist_id = i;
+                        }
+                    }
+                    const auto retval = reorder_buffer[min_dist_id];
+                    reorder_buffer[min_dist_id] = d;
+                    return retval;
+                };
 
                 // Iterate over batches until all done or range is complete
                 for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {
@@ -420,9 +465,14 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
 
                     // Iterate over current batch
                     for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
+                        if (T < 0.0001f) {
+                            done = true;
+                            break;
+                        }
 
                         // Resample using conic matrix (cf. "Surface Splatting" by Zwicker et al., 2001)
                         const auto g_exp = stroke::gaussian::eval_exponential_inv_C(collected_xy[j], collected_conic_opacity[j].conic, glm::vec2(pix));
+
                         // Eq. (2) from 3D Gaussian splatting paper.
                         // Obtain alpha by multiplying with Gaussian opacity
                         // and its exponential falloff from mean.
@@ -430,18 +480,16 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
                         float alpha = min(0.99f, collected_conic_opacity[j].opacity * g_exp);
                         if (alpha < 1.0f / 255.0f)
                             continue;
+                        const auto colour = g_rgb(collected_id[j]);
 
-                        float test_T = T * (1 - alpha);
-                        if (test_T < 0.0001f) {
-                            done = true;
-                            break;
-                        }
-
-                        // Eq. (3) from 3D Gaussian splatting paper.
-                        C += g_rgb(collected_id[j]) * alpha * T;
-
-                        T = test_T;
+                        const auto dist = stroke::max(0.f, gaussian::project_on_ray_inv_C(data.gm_centroids(collected_id[j]), g_cov3d(collected_id[j]), ray).centre);
+                        const DistDataPair g = reorder_gaussian({ dist, alpha, colour });
+                        add_contribution(g.alpha, g.colour);
+                        //                        add_contribution(alpha, colour);
                     }
+                }
+                for (unsigned i = 0; i < reorder_buffer_size; ++i) {
+                    add_contribution(reorder_buffer[i].alpha, reorder_buffer[i].colour);
                 }
 
                 if (!inside)
