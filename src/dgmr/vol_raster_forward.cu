@@ -450,7 +450,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
 
                     // Iterate over current batch
                     for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
-                        const auto gaussian1d = gaussian::project_on_ray_inv_C(collected_centroid[j], collected_cov3[j], ray);
+                        const auto gaussian1d = gaussian::intersect_with_ray_inv_C(collected_centroid[j], collected_cov3[j], ray);
                         const auto weight = gaussian1d.weight * collected_weight[j];
                         if (weight < 0.001 || weight > 1'000)
                             continue;
@@ -497,7 +497,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                     // Iterate over current batch
                     for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
                         const auto cov = collected_cov3[j];
-                        const auto gaussian1d = gaussian::project_on_ray_inv_C(collected_centroid[j], cov, ray);
+                        const auto gaussian1d = gaussian::intersect_with_ray_inv_C(collected_centroid[j], cov, ray);
                         const auto weight = gaussian1d.weight * collected_weight[j];
                         const auto centroid = gaussian1d.centre;
                         const auto variance = gaussian1d.C + vol_raster::config::workaround_variance_add_along_ray;
