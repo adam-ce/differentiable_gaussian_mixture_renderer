@@ -75,7 +75,7 @@ struct FilteredCovAndWeight {
 
 // kernel cov comes from a normalised gaussian, i.e., it integrates to 1 and has no explicit weight
 template <glm::length_t n_dims, typename scalar_t>
-STROKE_DEVICES_INLINE FilteredCovAndWeight<n_dims, scalar_t> convolve(const stroke::Cov<n_dims, scalar_t>& cov, const stroke::Cov<n_dims, scalar_t>& kernel_cov)
+STROKE_DEVICES_INLINE FilteredCovAndWeight<n_dims, scalar_t> convolve_unnormalised_with_normalised(const stroke::Cov<n_dims, scalar_t>& cov, const stroke::Cov<n_dims, scalar_t>& kernel_cov)
 {
     const auto new_cov = cov + kernel_cov;
     return { stroke::Cov<n_dims, scalar_t>(new_cov), float(stroke::sqrt(stroke::max(scalar_t(0.000025), scalar_t(det(cov) / det(new_cov))))) };

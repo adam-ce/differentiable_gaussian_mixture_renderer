@@ -216,7 +216,7 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
 
                 // low pass filter to combat aliasing
                 const auto cov2d = computeCov2D(centroid, focal_x, focal_y, data.tan_fovx, data.tan_fovy, cov3d, data.view_matrix);
-                const auto [filtered_cov_2d, aa_weight_factor] = utils::convolve(cov2d, stroke::Cov2<float>(0.3f));
+                const auto [filtered_cov_2d, aa_weight_factor] = utils::convolve_unnormalised_with_normalised(cov2d, stroke::Cov2<float>(0.3f));
                 const auto opacity = data.gm_weights(idx) * aa_weight_factor;
 
                 // using the more aggressive computation for calculating overlapping tiles:

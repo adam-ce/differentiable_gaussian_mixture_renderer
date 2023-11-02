@@ -67,13 +67,13 @@ struct RasterBinSizer_1 {
             bin_borders[current_bin] = pos;
         bin_borders[n_bins - 1] = stroke::max(pos, bin_borders[n_bins - 1]);
     }
-    STROKE_DEVICES_INLINE void add_gaussian(float opacity, float centre, float variance)
+    STROKE_DEVICES_INLINE void add_gaussian(float opacity, float centre, float sd)
     {
         namespace gaussian = stroke::gaussian;
-        const auto g_end_position = centre + stroke::sqrt(variance) * config::gaussian_relevance_sigma;
+        const auto g_end_position = centre + sd * config::gaussian_relevance_sigma;
         if (g_end_position < 0)
             return;
-        const auto alpha = stroke::min(0.99f, opacity * gaussian::integrate(centre, variance, { 0, g_end_position }));
+        const auto alpha = stroke::min(0.99f, opacity * gaussian::integrate_SD(centre, sd, { 0, g_end_position }));
         add_opacity(g_end_position, alpha);
     }
     STROKE_DEVICES_INLINE void finalise()
@@ -166,7 +166,7 @@ public:
     {
         return transmission < transmission_threshold;
     }
-    STROKE_DEVICES_INLINE void add_gaussian(float opacity, float centre, float variance)
+    STROKE_DEVICES_INLINE void add_gaussian(float opacity, float centre, float sd)
     {
         namespace gaussian = stroke::gaussian;
         const auto bin_for = [](float transmission) {
@@ -176,11 +176,10 @@ public:
         };
 
         assert(!stroke::isnan(centre));
-        assert(!stroke::isnan(variance));
-        assert(variance > 0);
+        assert(!stroke::isnan(sd));
+        assert(sd > 0);
 
-        const auto SD = stroke::sqrt(variance);
-        const auto alpha = stroke::min(0.999f, opacity * gaussian::integrate(centre, variance, { 0, centre + SD * config::gaussian_relevance_sigma }));
+        const auto alpha = stroke::min(0.999f, opacity * gaussian::integrate_SD(centre, sd, { 0, centre + sd * config::gaussian_relevance_sigma }));
         assert(!stroke::isnan(alpha));
 
         transmission *= 1 - alpha;
@@ -189,8 +188,8 @@ public:
 
         weight_sum[bin] += alpha;
         centroids[bin] += centre * alpha;
-        SDs[bin] += SD * alpha;
-        max_depth = stroke::max(centre + 3 * stroke::sqrt(variance), max_depth);
+        SDs[bin] += sd * alpha;
+        max_depth = stroke::max(centre + 3 * sd, max_depth);
     }
     STROKE_DEVICES_INLINE void finalise()
     {
