@@ -451,7 +451,10 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                     // Iterate over current batch
                     for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
                         const auto gaussian1d = gaussian::intersect_with_ray_inv_C(collected_centroid[j], collected_inv_cov3[j], ray);
-                        const auto weight = gaussian1d.weight * collected_weight[j];
+                        auto weight = gaussian1d.weight * collected_weight[j];
+                        if (vol_raster::config::use_orientation_dependent_gaussian_density)
+                            weight *= gaussian::norm_factor(gaussian1d.C) / gaussian::norm_factor_inv_C(collected_inv_cov3[j]);
+
                         if (weight < 0.001 || weight > 1'000)
                             continue;
                         if (gaussian1d.C + vol_raster::config::workaround_variance_add_along_ray <= 0)
@@ -498,10 +501,13 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                     for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
                         const auto inv_cov = collected_inv_cov3[j];
                         const auto gaussian1d = gaussian::intersect_with_ray_inv_C(collected_centroid[j], inv_cov, ray);
-                        const auto weight = gaussian1d.weight * collected_weight[j];
                         const auto centroid = gaussian1d.centre;
                         const auto variance = gaussian1d.C + vol_raster::config::workaround_variance_add_along_ray;
                         const auto inv_sd = 1 / stroke::sqrt(variance);
+                        auto weight = gaussian1d.weight * collected_weight[j];
+                        if (vol_raster::config::use_orientation_dependent_gaussian_density)
+                            weight *= gaussian::norm_factor(gaussian1d.C) / gaussian::norm_factor_inv_C(collected_inv_cov3[j]);
+
                         if (variance <= 0 || stroke::isnan(variance) || stroke::isnan(weight) || weight > 100'000)
                             continue; // todo: shouldn't happen any more after implementing AA?
                         if (!(weight >= 0 && weight < 100'000)) {
