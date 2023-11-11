@@ -107,7 +107,7 @@ STROKE_DEVICES_INLINE Gaussian2d splat(float weight, const glm::vec3& centroid, 
 
     const auto projected_centroid = project(centroid, camera.view_projection_matrix);
     dgmr::utils::Gaussian2d screen_space_gaussian;
-    screen_space_gaussian.weight = weight * det(S) * det(J);
+    screen_space_gaussian.weight = weight * camera.focal_x * camera.focal_y * det(J); // det(S) == camera.focal_x * camera.focal_y
     screen_space_gaussian.centroid = ndc2screen(projected_centroid, camera.fb_width, camera.fb_height);
     screen_space_gaussian.cov = affine_transform_and_cut(cov3D, T);
 
