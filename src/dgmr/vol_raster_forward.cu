@@ -16,6 +16,9 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *****************************************************************************/
 
+#include <cub/cub.cuh>
+#include <cub/device/device_radix_sort.cuh>
+
 #include "constants.h"
 #include "raster_bin_sizers.h"
 #include "utils.h"
