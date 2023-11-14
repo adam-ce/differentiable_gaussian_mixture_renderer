@@ -25,7 +25,6 @@
 #include "vol_raster_forward.h"
 
 #include <stroke/gaussian.h>
-#include <stroke/matrix.h>
 #include <whack/Tensor.h>
 #include <whack/kernel.h>
 

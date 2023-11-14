@@ -24,16 +24,16 @@
 #include <stroke/cuda_compat.h>
 #include <stroke/gaussian.h>
 #include <stroke/geometry.h>
-#include <stroke/matrix.h>
 #include <stroke/utility.h>
 #include <stroke/welford.h>
 
 namespace dgmr::utils {
 
+template <typename scalar_t = float>
 struct Gaussian2d {
-    float weight;
-    glm::vec2 centroid;
-    stroke::Cov2<float> cov;
+    scalar_t weight;
+    glm::vec<2, scalar_t> centroid;
+    stroke::Cov2<scalar_t> cov;
 };
 
 struct Camera {
@@ -72,7 +72,8 @@ STROKE_DEVICES_INLINE glm::vec2 ndc2screen(const glm::vec3& point, unsigned widt
     return { ndc2Pix(point.x, width), ndc2Pix(point.y, height) };
 }
 
-STROKE_DEVICES_INLINE Gaussian2d splat(float weight, const glm::vec3& centroid, const stroke::Cov3<float>& cov3D, const Camera& camera)
+template <typename scalar_t = float>
+STROKE_DEVICES_INLINE Gaussian2d<scalar_t> splat(scalar_t weight, const glm::vec<3, scalar_t>& centroid, const stroke::Cov3<scalar_t>& cov3D, const Camera& camera)
 {
 
     const auto clamp_to_fov = [&](const glm::vec3& t) {

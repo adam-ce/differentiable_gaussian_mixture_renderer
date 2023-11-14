@@ -18,8 +18,7 @@
 
 #pragma once
 
-#include <glm/glm.hpp>
-#include <stroke/matrix.h>
+#include <stroke/linalg.h>
 #include <whack/TensorView.h>
 #include <whack/array.h>
 
