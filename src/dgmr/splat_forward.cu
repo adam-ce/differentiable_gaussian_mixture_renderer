@@ -146,7 +146,7 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
     auto g_tiles_touched_data = whack::make_tensor<uint32_t>(whack::Location::Device, n_gaussians);
     auto g_tiles_touched = g_tiles_touched_data.view();
 
-    utils::Camera camera {
+    utils::Camera<float> camera {
         data.view_matrix, data.proj_matrix, focal_x, focal_y, data.tan_fovx, data.tan_fovy, fb_width, fb_height
     };
 
