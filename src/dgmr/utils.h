@@ -24,6 +24,7 @@
 #include <stroke/cuda_compat.h>
 #include <stroke/gaussian.h>
 #include <stroke/geometry.h>
+#include <stroke/linalg.h>
 #include <stroke/utility.h>
 #include <stroke/welford.h>
 
@@ -67,12 +68,26 @@ STROKE_DEVICES_INLINE glm::vec<3, scalar_t> project(const glm::vec<3, scalar_t>&
     return glm::vec<3, scalar_t>(pp);
 }
 
-STROKE_DEVICES_INLINE glm::vec2 ndc2screen(const glm::vec3& point, unsigned width, unsigned height)
+template <typename scalar_t>
+STROKE_DEVICES_INLINE glm::vec<2, scalar_t> ndc2screen(const glm::vec<3, scalar_t>& point, unsigned width, unsigned height)
 {
-    const auto ndc2Pix = [](float v, int S) {
-        return ((v + 1.0) * S - 1.0) * 0.5;
+    const auto ndc2Pix = [](scalar_t v, int S) {
+        return ((v + scalar_t(1.0)) * S - scalar_t(1.0)) * scalar_t(0.5);
     };
     return { ndc2Pix(point.x, width), ndc2Pix(point.y, height) };
+}
+
+template <typename scalar_t>
+STROKE_DEVICES_INLINE glm::mat<3, 3, scalar_t> make_jakobian(const glm::vec<3, scalar_t>& t, scalar_t l_prime, scalar_t focal_x = 1, scalar_t focal_y = 1)
+{
+    using mat3_t = glm::mat<3, 3, scalar_t>;
+    using mat3_col_t = typename mat3_t::col_type;
+    // clang-format off
+    return mat3_t(
+               mat3_col_t(                 focal_x / t.z,                                0,   (focal_x * t.x) / l_prime),
+               mat3_col_t(                             0,                    focal_y / t.z,   (focal_y * t.y) / l_prime),
+               mat3_col_t(-(focal_x * t.x) / (t.z * t.z),   -(focal_y * t.y) / (t.z * t.z),               t.z / l_prime));
+    // clang-format on
 }
 
 template <typename scalar_t>
@@ -81,11 +96,10 @@ STROKE_DEVICES_INLINE Gaussian2d<scalar_t> splat(scalar_t weight, const glm::vec
     using vec3_t = glm::vec<3, scalar_t>;
     using vec4_t = glm::vec<4, scalar_t>;
     using mat3_t = glm::mat<3, 3, scalar_t>;
-    using mat3_col_t = typename mat3_t::col_type;
     const auto clamp_to_fov = [&](const vec3_t& t) {
         const auto lim_x = scalar_t(1.3) * camera.tan_fovx * t.z;
         const auto lim_y = scalar_t(1.3) * camera.tan_fovy * t.z;
-        return glm::vec3 { stroke::clamp(t.x, -lim_x, lim_x), stroke::clamp(t.y, -lim_y, lim_y), t.z };
+        return vec3_t { stroke::clamp(t.x, -lim_x, lim_x), stroke::clamp(t.y, -lim_y, lim_y), t.z };
     };
 
     const auto t = clamp_to_fov(vec3_t(camera.view_matrix * vec4_t(centroid, 1.f))); // clamps the size of the jakobian
@@ -94,19 +108,13 @@ STROKE_DEVICES_INLINE Gaussian2d<scalar_t> splat(scalar_t weight, const glm::vec
 
     const auto l_prime = glm::length(t);
     // clang-format off
-    const auto J = mat3_t(
-        mat3_col_t(                              1 / t.z,                                     0,                      t.x / l_prime),
-        mat3_col_t(                                    0,                               1 / t.z,                      t.y / l_prime),
-        mat3_col_t(                 -(t.x) / (t.z * t.z),                  -(t.y) / (t.z * t.z),                      t.z / l_prime));
-    const auto S = mat3_t(
-        mat3_col_t(                       camera.focal_x,                                     0,                                  0),
-        mat3_col_t(                                    0,                        camera.focal_y,                                  0),
-        mat3_col_t(                                    0,                                     0,                                  1));
+    const auto J = make_jakobian(t, l_prime);
+//    const auto S = mat3_t(
+//        mat3_col_t(                       camera.focal_x,                                     0,                                  0),
+//        mat3_col_t(                                    0,                        camera.focal_y,                                  0),
+//        mat3_col_t(                                    0,                                     0,                                  1));
     // Avoid matrix multiplication S * J:
-    const auto SJ = mat3_t(
-        mat3_col_t(                 camera.focal_x / t.z,                                     0,   (camera.focal_x * t.x) / l_prime),
-        mat3_col_t(                                    0,                  camera.focal_y / t.z,   (camera.focal_y * t.y) / l_prime),
-        mat3_col_t(-(camera.focal_x * t.x) / (t.z * t.z), -(camera.focal_y * t.y) / (t.z * t.z),                      t.z / l_prime));
+    const auto SJ = make_jakobian(t, l_prime, camera.focal_x, camera.focal_y);
     // clang-format on
 
     const mat3_t W = mat3_t(camera.view_matrix);
