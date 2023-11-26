@@ -187,7 +187,7 @@ splat(scalar_t weight, const glm::vec<3, scalar_t>& centroid, const stroke::Cov3
     const auto grad_unclamped_t = grad_clamp_to_fov(unclamped_t, grad_t);
 
     //    const vec3_t unclamped_t = vec3_t(camera.view_matrix * vec4_t(centroid, scalar_t(1.)));
-    grad_centroid += vec3_t(stroke::grad::matvecmul(camera.view_matrix, vec4_t(centroid, scalar_t(1.)), vec4_t(grad_unclamped_t, scalar_t(0.))).right());
+    grad_centroid += vec3_t(transpose(camera.view_matrix) * vec4_t(grad_unclamped_t, scalar_t(0.)));
 
     // return screen_space_gaussian;
     return { grad_weight, grad_centroid, grad_cov3d };
