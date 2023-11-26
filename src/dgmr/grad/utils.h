@@ -118,7 +118,6 @@ splat(scalar_t weight, const glm::vec<3, scalar_t>& centroid, const stroke::Cov3
     using vec3_t = glm::vec<3, scalar_t>;
     using vec4_t = glm::vec<4, scalar_t>;
     using mat3_t = glm::mat<3, 3, scalar_t>;
-    using mat3_col_t = typename mat3_t::col_type;
     const auto clamp_to_fov = [&](const vec3_t& t) {
         const auto lim_x = 1.3f * camera.tan_fovx * t.z;
         const auto lim_y = 1.3f * camera.tan_fovy * t.z;
@@ -134,15 +133,8 @@ splat(scalar_t weight, const glm::vec<3, scalar_t>& centroid, const stroke::Cov3
     const vec3_t t = clamp_to_fov(unclamped_t); // clamps the size of the jakobian
 
     const scalar_t l_prime = glm::length(t);
-    // clang-format off
     const auto J = dgmr::utils::make_jakobian(t, l_prime);
-    //    const auto S = mat3_t(
-    //        mat3_col_t(                       camera.focal_x,                                     0,                                  0),
-    //        mat3_col_t(                                    0,                        camera.focal_y,                                  0),
-    //        mat3_col_t(                                    0,                                     0,                                  1));
-    // Avoid matrix multiplication S * J:
     const auto SJ = dgmr::utils::make_jakobian(t, l_prime, camera.focal_x, camera.focal_y);
-    // clang-format on
 
     const mat3_t W = mat3_t(camera.view_matrix);
     const mat3_t T = SJ * W;
