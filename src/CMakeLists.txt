@@ -32,7 +32,7 @@ else()
             SOURCE_DIR      ${CMAKE_SOURCE_DIR}/3rdparty/stroke
         )
         FetchContent_MakeAvailable(stroke)
-    else()
+    elseif(NOT TARGET stroke)
         add_subdirectory(${CMAKE_SOURCE_DIR}/3rdparty/stroke ${CMAKE_BINARY_DIR}/_deps/stroke-build)
     endif()
 endif()
