@@ -171,17 +171,12 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
 
                 const auto cov3d = utils::compute_cov(data.gm_cov_scales(idx) * data.cov_scale_multiplier, data.gm_cov_rotations(idx));
 
-                const auto screen_space_gaussian = utils::splat(data.gm_weights(idx), centroid, cov3d, camera);
-
-                // low pass filter to combat aliasing
-                const auto [filtered_cov_2d, aa_weight_factor] = utils::convolve_unnormalised_with_normalised(screen_space_gaussian.cov, stroke::Cov2<float>(0.3f));
-                const auto opacity = splat::config::use_orientation_dependent_gaussian_density
-                    ? data.gm_weights(idx) * aa_weight_factor
-                    : screen_space_gaussian.weight;
+                const auto screen_space_gaussian = utils::splat<splat::config::use_orientation_dependent_gaussian_density>(data.gm_weights(idx), centroid, cov3d, camera, 0.3f);
+                const auto opacity = screen_space_gaussian.weight;
 
                 // using the more aggressive computation for calculating overlapping tiles:
                 {
-                    const glm::uvec2 my_rect = { (int)ceil(3.f * sqrt(filtered_cov_2d[0])), (int)ceil(3.f * sqrt(filtered_cov_2d[2])) };
+                    const glm::uvec2 my_rect = { (int)ceil(3.f * sqrt(screen_space_gaussian.cov[0])), (int)ceil(3.f * sqrt(screen_space_gaussian.cov[2])) };
                     g_rects(idx) = my_rect;
                     glm::uvec2 rect_min, rect_max;
                     getRect(screen_space_gaussian.centroid, my_rect, &rect_min, &rect_max, render_grid_dim);
@@ -199,7 +194,7 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
                 g_rgb(idx) = computeColorFromSH(data.sh_degree, centroid, data.cam_poition, data.gm_sh_params(idx), &g_rgb_sh_clamped(idx));
 
                 // Inverse 2D covariance and opacity neatly pack into one float4
-                const auto conic2d = inverse(filtered_cov_2d);
+                const auto conic2d = inverse(screen_space_gaussian.cov);
                 g_conic_opacity(idx) = { conic2d, opacity };
             });
     }
@@ -377,8 +372,8 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
 
                         // Resample using conic matrix (cf. "Surface Splatting" by Zwicker et al., 2001)
                         const auto g_eval = splat::config::use_orientation_dependent_gaussian_density
-                            ? stroke::gaussian::eval_exponential_inv_C(collected_xy[j], collected_conic_opacity[j].conic, glm::vec2(pix))
-                            : stroke::gaussian::eval_normalised_inv_C(collected_xy[j], collected_conic_opacity[j].conic, glm::vec2(pix));
+                            ? stroke::gaussian::eval_normalised_inv_C(collected_xy[j], collected_conic_opacity[j].conic, glm::vec2(pix))
+                            : stroke::gaussian::eval_exponential_inv_C(collected_xy[j], collected_conic_opacity[j].conic, glm::vec2(pix));
                         // Eq. (2) from 3D Gaussian splatting paper.
                         // Obtain alpha by multiplying with Gaussian opacity
                         // and its exponential falloff from mean.
