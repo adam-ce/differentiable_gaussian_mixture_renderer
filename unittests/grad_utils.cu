@@ -21,54 +21,13 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <dgmr/grad/utils.h>
-#include <dgmr/utils.h>
-#include <glm/glm.hpp>
-#include <stroke/linalg.h>
-#include <whack/random/generators.h>
+
+#include "unit_test_utils.h"
 
 using namespace dgmr::utils;
+using namespace dgmr::unittest;
 
 namespace {
-template <glm::length_t n_dims, typename scalar_t, typename Generator>
-glm::mat<n_dims, n_dims, scalar_t> host_random_matrix(Generator* rnd)
-{
-    glm::mat<n_dims, n_dims, scalar_t> mat;
-    for (auto c = 0; c < n_dims; ++c) {
-        for (auto r = 0; r < n_dims; ++r) {
-            mat[c][r] = rnd->normal();
-        }
-    }
-    return mat;
-}
-
-template <glm::length_t n_dims, typename scalar_t, typename Generator>
-stroke::Cov<n_dims, scalar_t> host_random_cov(Generator* rnd)
-{
-    const auto mat = host_random_matrix<n_dims, scalar_t>(rnd);
-    return stroke::Cov<n_dims, scalar_t>(mat * transpose(mat)) + stroke::Cov<n_dims, scalar_t>(scalar_t(0.05));
-}
-
-template <typename scalar_t, typename Generator>
-Camera<scalar_t> random_camera(Generator* rnd)
-{
-    const scalar_t fovy = scalar_t(3.14 / 4);
-
-    Camera<scalar_t> c;
-    c.fb_height = 600;
-    c.fb_width = 800;
-    const auto aspect = scalar_t(c.fb_width) / scalar_t(c.fb_height);
-    c.tan_fovy = std::tan(fovy);
-    c.tan_fovx = c.tan_fovy * aspect; // via https://stackoverflow.com/questions/5504635/computing-fovx-opengl
-    c.focal_x = scalar_t(c.fb_width) / (scalar_t(2.0) * c.tan_fovx);
-    c.focal_y = scalar_t(c.fb_height) / (scalar_t(2.0) * c.tan_fovy);
-
-    const auto pos = glm::normalize(rnd->normal3()) * scalar_t(15);
-    const auto target = rnd->normal3() * scalar_t(1.5);
-    const auto up_vector = glm::normalize(rnd->normal3());
-    c.view_matrix = glm::lookAt(pos, target, up_vector);
-    c.view_projection_matrix = glm::perspective(scalar_t(fovy), aspect, scalar_t(0.1), scalar_t(100.)) * c.view_matrix;
-    return c;
-}
 
 template <bool orientation_dependent_gaussian_density>
 void check_splat(double filter_kernel_size)
@@ -91,6 +50,39 @@ void check_splat(double filter_kernel_size)
             const auto [weight, pos, cov] = stroke::extract<scalar_t, vec3_t, cov3_t>(input);
             const Gaussian2d<scalar_t> grad_incoming = stroke::extract<Gaussian2d<scalar_t>>(grad_output);
             const auto grad_outgoing = grad::splat<orientation_dependent_gaussian_density, scalar_t>(weight, pos, cov, grad_incoming, cam, scalar_t(filter_kernel_size));
+            return stroke::pack_tensor<scalar_t>(grad_outgoing);
+        };
+
+        const auto test_data = stroke::pack_tensor<scalar_t>(
+            rnd.normal(),
+            rnd.normal3(),
+            host_random_cov<3, scalar_t>(&rnd));
+        stroke::check_gradient(fun, fun_grad, test_data, scalar_t(0.000002), scalar_t(100)); // i think the gradient is correct, but a bit unstable.
+    }
+}
+
+template <bool orientation_dependent_gaussian_density>
+void check_splat_cached(double filter_kernel_size)
+{
+    using scalar_t = double;
+    using vec3_t = glm::vec<3, scalar_t>;
+    using cov3_t = stroke::Cov3<scalar_t>;
+
+    whack::random::HostGenerator<scalar_t> rnd;
+
+    for (int i = 0; i < 10; ++i) {
+        const auto cam = random_camera<scalar_t>(&rnd);
+        const auto fun = [cam, filter_kernel_size](const whack::Tensor<scalar_t, 1>& input) {
+            const auto [weight, pos, cov] = stroke::extract<scalar_t, vec3_t, cov3_t>(input);
+            const auto gc = splat_with_cache<orientation_dependent_gaussian_density, scalar_t>(weight, pos, cov, cam, scalar_t(filter_kernel_size));
+            return stroke::pack_tensor<scalar_t>(gc.gaussian);
+        };
+
+        const auto fun_grad = [cam, filter_kernel_size](const whack::Tensor<scalar_t, 1>& input, const whack::Tensor<scalar_t, 1>& grad_output) {
+            const auto [weight, pos, cov] = stroke::extract<scalar_t, vec3_t, cov3_t>(input);
+            const Gaussian2d<scalar_t> grad_incoming = stroke::extract<Gaussian2d<scalar_t>>(grad_output);
+            const auto gc = splat_with_cache<orientation_dependent_gaussian_density, scalar_t>(weight, pos, cov, cam, scalar_t(filter_kernel_size));
+            const auto grad_outgoing = grad::splat_with_cache<orientation_dependent_gaussian_density, scalar_t>(weight, pos, cov, grad_incoming, gc, cam, scalar_t(filter_kernel_size));
             return stroke::pack_tensor<scalar_t>(grad_outgoing);
         };
 
@@ -272,6 +264,23 @@ TEST_CASE("dgmr splat gradient (withOUT orientation dependence, filter kernel si
 TEST_CASE("dgmr splat gradient (withOUT orientation dependence, filter kernel size 0.3)")
 {
     check_splat<false>(0.3);
+}
+
+TEST_CASE("dgmr splat gradient (cached, with orientation dependence, filter kernel size 0)")
+{
+    check_splat_cached<true>(0);
+}
+TEST_CASE("dgmr splat gradient (cached, with orientation dependence, filter kernel size 0.3)")
+{
+    check_splat_cached<true>(0.3);
+}
+TEST_CASE("dgmr splat gradient (cached, withOUT orientation dependence, filter kernel size 0)")
+{
+    check_splat_cached<false>(0);
+}
+TEST_CASE("dgmr splat gradient (cached, withOUT orientation dependence, filter kernel size 0.3)")
+{
+    check_splat_cached<false>(0.3);
 }
 
 TEST_CASE("dgmr project gradient")

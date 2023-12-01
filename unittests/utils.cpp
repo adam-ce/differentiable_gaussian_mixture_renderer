@@ -19,20 +19,59 @@
 
 #include <stroke/pretty_printers.h>
 
-#include <catch2/catch_approx.hpp>
 #include <catch2/catch_template_test_macros.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <dgmr/utils.h>
 
-using Catch::Approx;
+#include "unit_test_utils.h"
+
 namespace {
-// template <int n_dims>
-// bool equals(const glm::vec<n_dims, double>& a, const glm::vec<n_dims, double>& b, double scale = 1) {
-//	const auto delta = glm::length(a - b);
-//	return delta == Approx(0).scale(scale);
-// }
+
+using namespace dgmr::unittest;
+using namespace dgmr::utils;
+
+template <bool orientation_dependent_gaussian_density>
+void check_splat(double filter_kernel_size)
+{
+    using scalar_t = double;
+    using vec3_t = glm::vec<3, scalar_t>;
+    using cov3_t = stroke::Cov3<scalar_t>;
+
+    whack::random::HostGenerator<scalar_t> rnd;
+
+    for (int i = 0; i < 10; ++i) {
+        const auto cam = random_camera<scalar_t>(&rnd);
+
+        const auto weight = rnd.uniform();
+        const auto position = rnd.normal3();
+        const auto cov = host_random_cov<3, scalar_t>(&rnd);
+        Gaussian2d<scalar_t> g = splat<orientation_dependent_gaussian_density, scalar_t>(weight, position, cov, cam, scalar_t(filter_kernel_size));
+        Gaussian2dAndValueCache<scalar_t> gc = splat_with_cache<orientation_dependent_gaussian_density, scalar_t>(weight, position, cov, cam, scalar_t(filter_kernel_size));
+        CHECK(g.weight == gc.gaussian.weight);
+        CHECK(g.centroid == gc.gaussian.centroid);
+        CHECK(g.cov == gc.gaussian.cov);
+    }
+}
+
 } // namespace
+
+TEST_CASE("dgmr utils: splat vs splat_with_cache (with orientation dependence, filter kernel size 0)")
+{
+    check_splat<true>(0);
+}
+TEST_CASE("dgmr utils: splat vs splat_with_cache (with orientation dependence, filter kernel size 0.3)")
+{
+    check_splat<true>(0.3);
+}
+TEST_CASE("dgmr utils: splat vs splat_with_cache (withOUT orientation dependence, filter kernel size 0)")
+{
+    check_splat<false>(0);
+}
+TEST_CASE("dgmr utils: splat vs splat_with_cache (withOUT orientation dependence, filter kernel size 0.3)")
+{
+    check_splat<false>(0.3);
+}
 
 TEST_CASE("dgmr utils: rotation matrix for rotating z into given direction")
 {
@@ -92,7 +131,11 @@ TEST_CASE("dgmr utils: gaussian_bounds")
     for (const auto& d : data) {
         const auto bounds = dgmr::utils::gaussian_to_point_distance_bounds(d.gauss_centr, d.gauss_size, d.gauss_rotation, d.gauss_iso_ellipsoid, d.query_point);
 
-        CHECK(bounds.min == Approx(d.expected_bounds.min).scale(10));
-        CHECK(bounds.max == Approx(d.expected_bounds.max).scale(10));
+        CHECK(bounds.min == Catch::Approx(d.expected_bounds.min).scale(10));
+        CHECK(bounds.max == Catch::Approx(d.expected_bounds.max).scale(10));
     }
+}
+
+TEST_CASE("dgmr utils: splat gives the same results as splat_cached")
+{
 }

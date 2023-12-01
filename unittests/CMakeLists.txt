@@ -17,6 +17,7 @@ add_executable(dgmr_unittests
     utils.cpp
     raster_bin_sizer.cpp
     grad_utils.cu
+    unit_test_utils.h
 )
 
 target_link_libraries(dgmr_unittests PUBLIC Catch2::Catch2WithMain CUDA::nvToolsExt differentiable_gaussian_mixture_renderer)
