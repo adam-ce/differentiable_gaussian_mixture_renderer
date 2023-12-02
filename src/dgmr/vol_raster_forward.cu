@@ -399,7 +399,6 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
             whack::Location::Device, render_grid_dim, render_block_dim, WHACK_DEVICE_KERNEL(=) {
                 WHACK_UNUSED(whack_gridDim);
                 // Identify current tile and associated min/max pixel range.
-                const auto& current_tile_index = whack_blockIdx;
                 const glm::uvec2 pix_min = { whack_blockIdx.x * whack_blockDim.x, whack_blockIdx.y * whack_blockDim.y };
                 const glm::uvec2 pix_max = min(pix_min + glm::uvec2(whack_blockDim.x, whack_blockDim.y), glm::uvec2(fb_width, fb_height));
                 const glm::uvec2 pix = pix_min + glm::uvec2(whack_threadIdx.x, whack_threadIdx.y);
@@ -474,7 +473,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                 rasterisation_bin_sizer.finalise();
                 done = !inside;
                 n_toDo = render_g_range.y - render_g_range.x;
-                float opacity = 1;
+                // float opacity = 1;
 
                 // Iterate over batches until all done or range is complete: rasterise into bins
                 for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {

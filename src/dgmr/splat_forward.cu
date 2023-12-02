@@ -321,7 +321,6 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
             whack::Location::Device, render_grid_dim, render_block_dim, WHACK_DEVICE_KERNEL(=) {
                 WHACK_UNUSED(whack_gridDim);
                 // Identify current tile and associated min/max pixel range.
-                const auto& current_tile_index = whack_blockIdx;
                 const glm::uvec2 pix_min = { whack_blockIdx.x * whack_blockDim.x, whack_blockIdx.y * whack_blockDim.y };
                 const glm::uvec2 pix_max = min(pix_min + glm::uvec2(whack_blockDim.x, whack_blockDim.y), glm::uvec2(fb_width, fb_height));
                 const glm::uvec2 pix = pix_min + glm::uvec2(whack_threadIdx.x, whack_threadIdx.y);
