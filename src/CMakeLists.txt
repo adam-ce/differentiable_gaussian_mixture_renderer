@@ -8,11 +8,7 @@ set(A_PYTHON_ENV_SITE_PACKAGES_PATH "$ENV{HOME}/.local/lib/python3.10/site-packa
 list(APPEND CMAKE_PREFIX_PATH "${A_PYTHON_ENV_PATH}")
 list(APPEND CMAKE_PREFIX_PATH "${A_PYTHON_ENV_SITE_PACKAGES_PATH}/torch")
 
-
-if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-  set(CMAKE_CUDA_ARCHITECTURES "75;86;90")
-endif()
-
+set(CMAKE_CUDA_ARCHITECTURES "75;86;90")
 find_package(Torch REQUIRED)
 
 include(FetchContent)
@@ -45,7 +41,7 @@ add_library(differentiable_gaussian_mixture_renderer
     dgmr/raster_bin_sizers.h
 )
 target_compile_definitions(differentiable_gaussian_mixture_renderer INTERFACE GLM_FORCE_LEFT_HANDED)
-target_link_libraries(differentiable_gaussian_mixture_renderer PUBLIC stroke whack)
+target_link_libraries(differentiable_gaussian_mixture_renderer PUBLIC stroke whack PRIVATE torch)
 target_include_directories(differentiable_gaussian_mixture_renderer INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_options(differentiable_gaussian_mixture_renderer PUBLIC $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>)
 #set_target_properties(differentiable_gaussian_mixture_renderer PROPERTIES CUDA_ARCHITECTURES )

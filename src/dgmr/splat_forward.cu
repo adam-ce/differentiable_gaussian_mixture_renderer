@@ -18,14 +18,14 @@
 
 #include <cub/cub.cuh>
 #include <cub/device/device_radix_sort.cuh>
+#include <stroke/gaussian.h>
+#include <whack/Tensor.h>
+#include <whack/kernel.h>
+#include <whack/torch_interop.h>
 
 #include "constants.h"
 #include "splat_forward.h"
 #include "utils.h"
-
-#include <stroke/gaussian.h>
-#include <whack/Tensor.h>
-#include <whack/kernel.h>
 
 namespace {
 using namespace dgmr;
@@ -125,26 +125,40 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
     const dim3 render_grid_dim = whack::grid_dim_from_total_size({ data.framebuffer.size<2>(), data.framebuffer.size<1>() }, render_block_dim);
 
     // geometry buffers, filled by the preprocess pass
-    auto g_rects_data = whack::make_tensor<glm::uvec2>(whack::Location::Device, n_gaussians);
-    auto g_rects = g_rects_data.view();
+    auto g_rects_data = torch::empty({ n_gaussians, 2 }, torch::TensorOptions().dtype(torch::kInt).device(torch::kCUDA));
+    auto g_rects = whack::make_tensor_view<glm::uvec2>(g_rects_data, n_gaussians);
+    // auto g_rects_data = whack::make_tensor<glm::uvec2>(whack::Location::Device, n_gaussians);
+    // auto g_rects = g_rects_data.view();
 
-    auto g_rgb_data = whack::make_tensor<glm::vec3>(whack::Location::Device, n_gaussians);
-    auto g_rgb = g_rgb_data.view();
+    auto g_rgb_data = torch::empty({ n_gaussians, 3 }, torch::TensorOptions().dtype(torch::kFloat).device(torch::kCUDA));
+    auto g_rgb = whack::make_tensor_view<glm::vec3>(g_rgb_data, n_gaussians);
+    // auto g_rgb_data = whack::make_tensor<glm::vec3>(whack::Location::Device, n_gaussians);
+    // auto g_rgb = g_rgb_data.view();
 
-    auto g_rgb_sh_clamped_data = whack::make_tensor<glm::vec<3, bool>>(whack::Location::Device, n_gaussians);
-    auto g_rgb_sh_clamped = g_rgb_sh_clamped_data.view();
+    auto g_rgb_sh_clamped_data = torch::empty({ n_gaussians, 3 }, torch::TensorOptions().dtype(torch::kBool).device(torch::kCUDA));
+    auto g_rgb_sh_clamped = whack::make_tensor_view<glm::vec<3, bool>>(g_rgb_sh_clamped_data, n_gaussians);
+    // auto g_rgb_sh_clamped_data = whack::make_tensor<glm::vec<3, bool>>(whack::Location::Device, n_gaussians);
+    // auto g_rgb_sh_clamped = g_rgb_sh_clamped_data.view();
 
-    auto g_depths_data = whack::make_tensor<float>(whack::Location::Device, n_gaussians);
-    auto g_depths = g_depths_data.view();
+    auto g_depths_data = torch::empty({ n_gaussians, 1 }, torch::TensorOptions().dtype(torch::kFloat).device(torch::kCUDA));
+    auto g_depths = whack::make_tensor_view<float>(g_depths_data, n_gaussians);
+    // auto g_depths_data = whack::make_tensor<float>(whack::Location::Device, n_gaussians);
+    // auto g_depths = g_depths_data.view();
 
-    auto g_points_xy_image_data = whack::make_tensor<glm::vec2>(whack::Location::Device, n_gaussians);
-    auto g_points_xy_image = g_points_xy_image_data.view();
+    auto g_points_xy_image_data = torch::empty({ n_gaussians, 2 }, torch::TensorOptions().dtype(torch::kFloat).device(torch::kCUDA));
+    auto g_points_xy_image = whack::make_tensor_view<glm::vec2>(g_points_xy_image_data, n_gaussians);
+    // auto g_points_xy_image_data = whack::make_tensor<glm::vec2>(whack::Location::Device, n_gaussians);
+    // auto g_points_xy_image = g_points_xy_image_data.view();
 
-    auto g_conic_opacity_data = whack::make_tensor<ConicAndOpacity>(whack::Location::Device, n_gaussians);
-    auto g_conic_opacity = g_conic_opacity_data.view();
+    auto g_conic_opacity_data = torch::empty({ n_gaussians, 4 }, torch::TensorOptions().dtype(torch::kFloat).device(torch::kCUDA));
+    auto g_conic_opacity = whack::make_tensor_view<ConicAndOpacity>(g_conic_opacity_data, n_gaussians);
+    // auto g_conic_opacity_data = whack::make_tensor<ConicAndOpacity>(whack::Location::Device, n_gaussians);
+    // auto g_conic_opacity = g_conic_opacity_data.view();
 
-    auto g_tiles_touched_data = whack::make_tensor<uint32_t>(whack::Location::Device, n_gaussians);
-    auto g_tiles_touched = g_tiles_touched_data.view();
+    auto g_tiles_touched_data = torch::empty({ n_gaussians, 1 }, torch::TensorOptions().dtype(torch::kInt).device(torch::kCUDA));
+    auto g_tiles_touched = whack::make_tensor_view<uint32_t>(g_tiles_touched_data, n_gaussians);
+    // auto g_tiles_touched_data = whack::make_tensor<uint32_t>(whack::Location::Device, n_gaussians);
+    // auto g_tiles_touched = g_tiles_touched_data.view();
 
     utils::Camera<float> camera {
         data.view_matrix, data.proj_matrix, focal_x, focal_y, data.tan_fovx, data.tan_fovy, fb_width, fb_height
@@ -205,10 +219,10 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
     auto g_point_offsets = g_point_offsets_data.view();
     {
         size_t temp_storage_bytes = 0;
-        cub::DeviceScan::InclusiveSum(nullptr, temp_storage_bytes, g_tiles_touched_data.raw_pointer(), g_tiles_touched_data.raw_pointer(), n_gaussians);
+        cub::DeviceScan::InclusiveSum(nullptr, temp_storage_bytes, reinterpret_cast<uint32_t*>(g_tiles_touched_data.data_ptr()), reinterpret_cast<uint32_t*>(g_tiles_touched_data.data_ptr()), n_gaussians);
         auto temp_storage = whack::make_tensor<char>(whack::Location::Device, temp_storage_bytes);
 
-        cub::DeviceScan::InclusiveSum(temp_storage.raw_pointer(), temp_storage_bytes, g_tiles_touched_data.raw_pointer(), g_point_offsets_data.raw_pointer(), n_gaussians);
+        cub::DeviceScan::InclusiveSum(temp_storage.raw_pointer(), temp_storage_bytes, reinterpret_cast<uint32_t*>(g_tiles_touched_data.data_ptr()), g_point_offsets_data.raw_pointer(), n_gaussians);
         CHECK_CUDA(data.debug);
     }
 
