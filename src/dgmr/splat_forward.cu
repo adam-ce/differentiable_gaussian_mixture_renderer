@@ -19,7 +19,6 @@
 #include <cub/cub.cuh>
 #include <cub/device/device_radix_sort.cuh>
 #include <stroke/gaussian.h>
-#include <whack/Tensor.h>
 #include <whack/kernel.h>
 #include <whack/torch_interop.h>
 
@@ -29,6 +28,12 @@
 
 namespace {
 using namespace dgmr;
+
+template <typename T>
+T* raw_pointer(const torch::Tensor& tensor)
+{
+    return reinterpret_cast<T*>(tensor.data_ptr());
+}
 
 // from inria:
 
@@ -127,38 +132,24 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
     // geometry buffers, filled by the preprocess pass
     auto g_rects_data = torch::empty({ n_gaussians, 2 }, torch::TensorOptions().dtype(torch::kInt).device(torch::kCUDA));
     auto g_rects = whack::make_tensor_view<glm::uvec2>(g_rects_data, n_gaussians);
-    // auto g_rects_data = whack::make_tensor<glm::uvec2>(whack::Location::Device, n_gaussians);
-    // auto g_rects = g_rects_data.view();
 
-    auto g_rgb_data = torch::empty({ n_gaussians, 3 }, torch::TensorOptions().dtype(torch::kFloat).device(torch::kCUDA));
+    auto g_rgb_data = torch::empty({ n_gaussians, 3 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
     auto g_rgb = whack::make_tensor_view<glm::vec3>(g_rgb_data, n_gaussians);
-    // auto g_rgb_data = whack::make_tensor<glm::vec3>(whack::Location::Device, n_gaussians);
-    // auto g_rgb = g_rgb_data.view();
 
     auto g_rgb_sh_clamped_data = torch::empty({ n_gaussians, 3 }, torch::TensorOptions().dtype(torch::kBool).device(torch::kCUDA));
     auto g_rgb_sh_clamped = whack::make_tensor_view<glm::vec<3, bool>>(g_rgb_sh_clamped_data, n_gaussians);
-    // auto g_rgb_sh_clamped_data = whack::make_tensor<glm::vec<3, bool>>(whack::Location::Device, n_gaussians);
-    // auto g_rgb_sh_clamped = g_rgb_sh_clamped_data.view();
 
-    auto g_depths_data = torch::empty({ n_gaussians, 1 }, torch::TensorOptions().dtype(torch::kFloat).device(torch::kCUDA));
+    auto g_depths_data = torch::empty({ n_gaussians, 1 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
     auto g_depths = whack::make_tensor_view<float>(g_depths_data, n_gaussians);
-    // auto g_depths_data = whack::make_tensor<float>(whack::Location::Device, n_gaussians);
-    // auto g_depths = g_depths_data.view();
 
-    auto g_points_xy_image_data = torch::empty({ n_gaussians, 2 }, torch::TensorOptions().dtype(torch::kFloat).device(torch::kCUDA));
+    auto g_points_xy_image_data = torch::empty({ n_gaussians, 2 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
     auto g_points_xy_image = whack::make_tensor_view<glm::vec2>(g_points_xy_image_data, n_gaussians);
-    // auto g_points_xy_image_data = whack::make_tensor<glm::vec2>(whack::Location::Device, n_gaussians);
-    // auto g_points_xy_image = g_points_xy_image_data.view();
 
-    auto g_conic_opacity_data = torch::empty({ n_gaussians, 4 }, torch::TensorOptions().dtype(torch::kFloat).device(torch::kCUDA));
+    auto g_conic_opacity_data = torch::empty({ n_gaussians, 4 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
     auto g_conic_opacity = whack::make_tensor_view<ConicAndOpacity>(g_conic_opacity_data, n_gaussians);
-    // auto g_conic_opacity_data = whack::make_tensor<ConicAndOpacity>(whack::Location::Device, n_gaussians);
-    // auto g_conic_opacity = g_conic_opacity_data.view();
 
-    auto g_tiles_touched_data = torch::empty({ n_gaussians, 1 }, torch::TensorOptions().dtype(torch::kInt).device(torch::kCUDA));
+    auto g_tiles_touched_data = torch::empty({ n_gaussians, 1 }, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
     auto g_tiles_touched = whack::make_tensor_view<uint32_t>(g_tiles_touched_data, n_gaussians);
-    // auto g_tiles_touched_data = whack::make_tensor<uint32_t>(whack::Location::Device, n_gaussians);
-    // auto g_tiles_touched = g_tiles_touched_data.view();
 
     utils::Camera<float> camera {
         data.view_matrix, data.proj_matrix, focal_x, focal_y, data.tan_fovx, data.tan_fovy, fb_width, fb_height
@@ -215,32 +206,41 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
 
     // Compute prefix sum over full list of touched tile counts by Gaussians
     // E.g., [2, 3, 0, 2, 1] -> [2, 5, 5, 7, 8]
-    auto g_point_offsets_data = whack::make_tensor<uint32_t>(whack::Location::Device, n_gaussians);
-    auto g_point_offsets = g_point_offsets_data.view();
+    auto g_point_offsets_data = torch::empty({ n_gaussians, 1 }, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
+    auto g_point_offsets = whack::make_tensor_view<uint32_t>(g_point_offsets_data, n_gaussians);
     {
         size_t temp_storage_bytes = 0;
-        cub::DeviceScan::InclusiveSum(nullptr, temp_storage_bytes, reinterpret_cast<uint32_t*>(g_tiles_touched_data.data_ptr()), reinterpret_cast<uint32_t*>(g_tiles_touched_data.data_ptr()), n_gaussians);
-        auto temp_storage = whack::make_tensor<char>(whack::Location::Device, temp_storage_bytes);
+        cub::DeviceScan::InclusiveSum(
+            nullptr, temp_storage_bytes,
+            raw_pointer<uint32_t>(g_tiles_touched_data), raw_pointer<uint32_t>(g_tiles_touched_data),
+            n_gaussians);
 
-        cub::DeviceScan::InclusiveSum(temp_storage.raw_pointer(), temp_storage_bytes, reinterpret_cast<uint32_t*>(g_tiles_touched_data.data_ptr()), g_point_offsets_data.raw_pointer(), n_gaussians);
+        auto temp_storage = torch::empty(temp_storage_bytes, torch::TensorOptions().dtype(torch::kChar).device(torch::kCUDA));
+
+        cub::DeviceScan::InclusiveSum(
+            raw_pointer<char>(temp_storage), temp_storage_bytes,
+            raw_pointer<uint32_t>(g_tiles_touched_data), raw_pointer<uint32_t>(g_point_offsets_data),
+            n_gaussians);
         CHECK_CUDA(data.debug);
     }
 
-    const auto n_render_gaussians = unsigned(g_point_offsets_data.device_vector().back());
+    const auto n_render_gaussians = unsigned(g_point_offsets_data[n_gaussians - 1].item<int>());
     if (n_render_gaussians == 0)
         return { 0 };
 
     // For each instance to be rendered, produce adequate [ tile | depth ] key
     // and corresponding dublicated Gaussian indices to be sorted
-    auto b_point_list_keys_data = whack::make_tensor<uint64_t>(whack::Location::Device, n_render_gaussians);
-    auto b_point_list_keys = b_point_list_keys_data.view();
-    auto b_point_list_data = whack::make_tensor<uint32_t>(whack::Location::Device, n_render_gaussians);
-    auto b_point_list = b_point_list_data.view();
+    auto b_point_list_keys_data = torch::empty({ n_render_gaussians }, torch::TensorOptions().dtype(torch::kInt64).device(torch::kCUDA));
+    auto b_point_list_keys = whack::make_tensor_view<uint64_t>(b_point_list_keys_data, n_render_gaussians);
+
+    auto b_point_list_data = torch::empty({ n_render_gaussians }, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
+    auto b_point_list = whack::make_tensor_view<uint32_t>(b_point_list_data, n_render_gaussians);
     {
-        auto b_point_list_keys_unsorted_data = whack::make_tensor<uint64_t>(whack::Location::Device, n_render_gaussians);
-        auto b_point_list_keys_unsorted = b_point_list_keys_unsorted_data.view();
-        auto b_point_list_unsorted_data = whack::make_tensor<uint32_t>(whack::Location::Device, n_render_gaussians);
-        auto b_point_list_unsorted = b_point_list_unsorted_data.view();
+        auto b_point_list_keys_unsorted_data = torch::empty({ n_render_gaussians }, torch::TensorOptions().dtype(torch::kInt64).device(torch::kCUDA));
+        auto b_point_list_keys_unsorted = whack::make_tensor_view<uint64_t>(b_point_list_keys_unsorted_data, n_render_gaussians);
+
+        auto b_point_list_unsorted_data = torch::empty({ n_render_gaussians }, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
+        auto b_point_list_unsorted = whack::make_tensor_view<uint32_t>(b_point_list_unsorted_data, n_render_gaussians);
 
         whack::start_parallel( // duplicateWithKeys
             whack::Location::Device, whack::grid_dim_from_total_size(n_gaussians, 256), 256, WHACK_KERNEL(=) {
@@ -282,23 +282,23 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
         cub::DeviceRadixSort::SortPairs(
             nullptr,
             temp_storage_bytes,
-            b_point_list_keys_unsorted_data.raw_pointer(), b_point_list_keys_data.raw_pointer(),
-            b_point_list_unsorted_data.raw_pointer(), b_point_list_data.raw_pointer(),
+            raw_pointer<uint64_t>(b_point_list_keys_unsorted_data), raw_pointer<uint64_t>(b_point_list_keys_data),
+            raw_pointer<uint32_t>(b_point_list_unsorted_data), raw_pointer<uint32_t>(b_point_list_data),
             n_render_gaussians, 0, 32 + bit);
-        auto temp_storage = whack::make_tensor<char>(whack::Location::Device, temp_storage_bytes);
+
+        auto temp_storage = torch::empty(temp_storage_bytes, torch::TensorOptions().dtype(torch::kChar).device(torch::kCUDA));
         cub::DeviceRadixSort::SortPairs(
-            temp_storage.raw_pointer(),
+            raw_pointer<void>(temp_storage),
             temp_storage_bytes,
-            b_point_list_keys_unsorted_data.raw_pointer(), b_point_list_keys_data.raw_pointer(),
-            b_point_list_unsorted_data.raw_pointer(), b_point_list_data.raw_pointer(),
+            raw_pointer<uint64_t>(b_point_list_keys_unsorted_data), raw_pointer<uint64_t>(b_point_list_keys_data),
+            raw_pointer<uint32_t>(b_point_list_unsorted_data), raw_pointer<uint32_t>(b_point_list_data),
             n_render_gaussians, 0, 32 + bit);
         CHECK_CUDA(data.debug);
     }
 
-    auto i_ranges_data = whack::make_tensor<glm::uvec2>(whack::Location::Device, render_grid_dim.y * render_grid_dim.x);
+    auto i_ranges_data = torch::zeros({ render_grid_dim.y * render_grid_dim.x, 2 }, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
     {
-        auto i_ranges = i_ranges_data.view();
-        thrust::fill(i_ranges_data.device_vector().begin(), i_ranges_data.device_vector().end(), glm::uvec2(0));
+        auto i_ranges = whack::make_tensor_view<glm::uvec2>(i_ranges_data, render_grid_dim.y * render_grid_dim.x);
 
         whack::start_parallel( // identifyTileRanges
             whack::Location::Device, whack::grid_dim_from_total_size(n_render_gaussians, 256), 256, WHACK_KERNEL(=) {
@@ -330,7 +330,7 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
         // Main rasterization method. Collaboratively works on one tile per
         // block, each thread treats one pixel. Alternates between fetching
         // and rasterizing data.
-        auto i_ranges = whack::make_tensor_view(i_ranges_data.device_vector(), render_grid_dim.y, render_grid_dim.x);
+        auto i_ranges = whack::make_tensor_view<glm::uvec2>(i_ranges_data, render_grid_dim.y, render_grid_dim.x);
         whack::start_parallel(
             whack::Location::Device, render_grid_dim, render_block_dim, WHACK_DEVICE_KERNEL(=) {
                 WHACK_UNUSED(whack_gridDim);
