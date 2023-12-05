@@ -177,7 +177,6 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
                 const auto cov3d = utils::compute_cov(data.gm_cov_scales(idx) * data.cov_scale_multiplier, data.gm_cov_rotations(idx));
 
                 const auto screen_space_gaussian = utils::splat<splat::config::use_orientation_dependent_gaussian_density>(data.gm_weights(idx), centroid, cov3d, camera, 0.3f);
-                const auto opacity = screen_space_gaussian.weight;
 
                 // using the more aggressive computation for calculating overlapping tiles:
                 {
@@ -200,7 +199,7 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
 
                 // Inverse 2D covariance and opacity neatly pack into one float4
                 const auto conic2d = inverse(screen_space_gaussian.cov);
-                g_conic_opacity(idx) = { conic2d, opacity };
+                g_conic_opacity(idx) = { conic2d, screen_space_gaussian.weight };
             });
     }
 
