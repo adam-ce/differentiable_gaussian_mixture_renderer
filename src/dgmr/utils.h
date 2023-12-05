@@ -193,23 +193,18 @@ STROKE_DEVICES_INLINE Gaussian2d<scalar_t> splat(scalar_t weight, const glm::vec
 
     const auto projected_centroid = project(centroid, camera.view_projection_matrix);
     dgmr::utils::Gaussian2d<scalar_t> screen_space_gaussian;
-    if (orientation_dependent_density) {
-        const auto J = make_jakobian(t, l_prime);
-        screen_space_gaussian.weight = weight * camera.focal_x * camera.focal_y * det(J); // det(S) == camera.focal_x * camera.focal_y
-    } else {
-        screen_space_gaussian.weight = weight;
-    }
     screen_space_gaussian.centroid = ndc2screen(projected_centroid, camera.fb_width, camera.fb_height);
 
     const auto filter_kernel = stroke::Cov2<scalar_t>(filter_kernel_size);
-
     screen_space_gaussian.cov = affine_transform_and_cut(cov3D, T);
     if (orientation_dependent_density) {
         screen_space_gaussian.cov += filter_kernel;
+        const auto J = make_jakobian(t, l_prime);
+        screen_space_gaussian.weight = weight * camera.focal_x * camera.focal_y * det(J) * stroke::gaussian::norm_factor(screen_space_gaussian.cov); // det(S) == camera.focal_x * camera.focal_y
     } else {
         scalar_t aa_weight_factor = 1;
         cuda::std::tie(screen_space_gaussian.cov, aa_weight_factor) = utils::convolve_unnormalised_with_normalised(screen_space_gaussian.cov, filter_kernel);
-        screen_space_gaussian.weight *= aa_weight_factor;
+        screen_space_gaussian.weight = weight * aa_weight_factor;
     }
 
     return screen_space_gaussian;
@@ -248,23 +243,18 @@ STROKE_DEVICES_INLINE Gaussian2dAndValueCache<scalar_t> splat_with_cache(scalar_
 
     const auto projected_centroid = project(centroid, camera.view_projection_matrix);
     dgmr::utils::Gaussian2d<scalar_t> screen_space_gaussian;
-    if (orientation_dependent_density) {
-        const auto J = make_jakobian(t, l_prime);
-        screen_space_gaussian.weight = weight * camera.focal_x * camera.focal_y * det(J); // det(S) == camera.focal_x * camera.focal_y
-    } else {
-        screen_space_gaussian.weight = weight;
-    }
     screen_space_gaussian.centroid = ndc2screen(projected_centroid, camera.fb_width, camera.fb_height);
 
     const auto filter_kernel = stroke::Cov2<scalar_t>(filter_kernel_size);
-
     screen_space_gaussian.cov = affine_transform_and_cut(cov3D, T);
     if (orientation_dependent_density) {
         screen_space_gaussian.cov += filter_kernel;
+        const auto J = make_jakobian(t, l_prime);
+        screen_space_gaussian.weight = weight * camera.focal_x * camera.focal_y * det(J) * stroke::gaussian::norm_factor(screen_space_gaussian.cov); // det(S) == camera.focal_x * camera.focal_y
     } else {
         scalar_t aa_weight_factor = 1;
         cuda::std::tie(screen_space_gaussian.cov, aa_weight_factor) = utils::convolve_unnormalised_with_normalised(screen_space_gaussian.cov, filter_kernel);
-        screen_space_gaussian.weight *= aa_weight_factor;
+        screen_space_gaussian.weight = weight * aa_weight_factor;
     }
 
     return { screen_space_gaussian, T, unclamped_t };

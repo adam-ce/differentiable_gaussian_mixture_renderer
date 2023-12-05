@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <stroke/grad/gaussian.h>
 #include <stroke/grad/linalg.h>
 #include <stroke/grad/scalar_functions.h>
 #include <stroke/grad/util.h>
@@ -160,6 +161,7 @@ splat(scalar_t weight, const glm::vec<3, scalar_t>& centroid, const stroke::Cov3
     const mat3_t W = mat3_t(camera.view_matrix);
     const mat3_t T = SJ * W;
 
+    const auto unfiltered_screenspace_cov = dgmr::utils::affine_transform_and_cut(cov3D, T);
     const auto projected_centroid = dgmr::utils::project(centroid, camera.view_projection_matrix);
     const auto det_J = det(J);
     assert(det_J > 0);
@@ -170,20 +172,24 @@ splat(scalar_t weight, const glm::vec<3, scalar_t>& centroid, const stroke::Cov3
     auto grad_t = vec3_t(0);
     auto grad_l_prime = scalar_t(0);
 
+    const auto filter_kernel = stroke::Cov2<scalar_t>(filter_kernel_size);
     if (orientation_dependent_density) {
-        //    screen_space_gaussian.weight = weight * camera.focal_x * camera.focal_y * det(J); // det(S) == camera.focal_x * camera.focal_y
-        grad_weight *= camera.focal_x * camera.focal_y * det_J;
-        const auto grad_det_J = incoming_grad.weight * weight * camera.focal_x * camera.focal_y;
+        const auto norm_factor = stroke::gaussian::norm_factor(unfiltered_screenspace_cov + filter_kernel);
+        //    screen_space_gaussian.weight = weight * camera.focal_x * camera.focal_y * det(J) * norm_factor; // det(S) == camera.focal_x * camera.focal_y
+        grad_weight *= camera.focal_x * camera.focal_y * det_J * norm_factor;
+        const auto grad_det_J = incoming_grad.weight * weight * camera.focal_x * camera.focal_y * norm_factor;
 
         //    const auto det_J = det(J);
         const auto grad_J = stroke::grad::det(J, grad_det_J);
 
         //    const auto J = dgmr::utils::make_jakobian(t, l_prime);
         grad::make_jakobian<scalar_t>(t, l_prime, grad_J, 1, 1).addTo(&grad_t, &grad_l_prime);
+
+        const auto grad_norm_factor = incoming_grad.weight * weight * camera.focal_x * camera.focal_y * det_J;
+        incoming_cov_grad += stroke::grad::gaussian::norm_factor(unfiltered_screenspace_cov + filter_kernel, grad_norm_factor);
+
     } else {
-        const auto filter_kernel = stroke::Cov2<scalar_t>(filter_kernel_size);
         // screen_space_gaussian.weight *= aa_weight_factor;
-        const auto unfiltered_screenspace_cov = dgmr::utils::affine_transform_and_cut(cov3D, T);
         const auto aa_weight_factor = cuda::std::get<1>(utils::convolve_unnormalised_with_normalised(unfiltered_screenspace_cov, filter_kernel));
         grad_weight *= aa_weight_factor;
         const auto grad_aa_weight_factor = incoming_grad.weight * weight;
@@ -247,6 +253,7 @@ splat_with_cache(scalar_t weight, const glm::vec<3, scalar_t>& centroid, const s
     const mat3_t W = mat3_t(camera.view_matrix);
     const mat3_t& T = cache.T; // SJ * W
 
+    const auto unfiltered_screenspace_cov = dgmr::utils::affine_transform_and_cut(cov3D, T);
     const auto projected_centroid = dgmr::utils::project(centroid, camera.view_projection_matrix);
     const auto det_J = det(J);
     assert(det_J > 0);
@@ -257,20 +264,24 @@ splat_with_cache(scalar_t weight, const glm::vec<3, scalar_t>& centroid, const s
     auto grad_t = vec3_t(0);
     auto grad_l_prime = scalar_t(0);
 
+    const auto filter_kernel = stroke::Cov2<scalar_t>(filter_kernel_size);
     if (orientation_dependent_density) {
-        //    screen_space_gaussian.weight = weight * camera.focal_x * camera.focal_y * det(J); // det(S) == camera.focal_x * camera.focal_y
-        grad_weight *= camera.focal_x * camera.focal_y * det_J;
-        const auto grad_det_J = incoming_grad.weight * weight * camera.focal_x * camera.focal_y;
+        const auto norm_factor = stroke::gaussian::norm_factor(unfiltered_screenspace_cov + filter_kernel);
+        //    screen_space_gaussian.weight = weight * camera.focal_x * camera.focal_y * det(J) * norm_factor; // det(S) == camera.focal_x * camera.focal_y
+        grad_weight *= camera.focal_x * camera.focal_y * det_J * norm_factor;
+        const auto grad_det_J = incoming_grad.weight * weight * camera.focal_x * camera.focal_y * norm_factor;
 
         //    const auto det_J = det(J);
         const auto grad_J = stroke::grad::det(J, grad_det_J);
 
         //    const auto J = dgmr::utils::make_jakobian(t, l_prime);
         grad::make_jakobian<scalar_t>(t, l_prime, grad_J, 1, 1).addTo(&grad_t, &grad_l_prime);
+
+        const auto grad_norm_factor = incoming_grad.weight * weight * camera.focal_x * camera.focal_y * det_J;
+        incoming_cov_grad += stroke::grad::gaussian::norm_factor(unfiltered_screenspace_cov + filter_kernel, grad_norm_factor);
+
     } else {
-        const auto filter_kernel = stroke::Cov2<scalar_t>(filter_kernel_size);
         // screen_space_gaussian.weight *= aa_weight_factor;
-        const auto unfiltered_screenspace_cov = dgmr::utils::affine_transform_and_cut(cov3D, T);
         const auto aa_weight_factor = cuda::std::get<1>(utils::convolve_unnormalised_with_normalised(unfiltered_screenspace_cov, filter_kernel));
         grad_weight *= aa_weight_factor;
         const auto grad_aa_weight_factor = incoming_grad.weight * weight;
@@ -305,4 +316,4 @@ splat_with_cache(scalar_t weight, const glm::vec<3, scalar_t>& centroid, const s
     // return screen_space_gaussian;
     return { grad_weight, grad_centroid, grad_cov3d };
 }
-}
+} // namespace dgmr::utils::grad

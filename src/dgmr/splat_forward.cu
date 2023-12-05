@@ -384,9 +384,7 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
                     for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
 
                         // Resample using conic matrix (cf. "Surface Splatting" by Zwicker et al., 2001)
-                        const auto g_eval = splat::config::use_orientation_dependent_gaussian_density
-                            ? stroke::gaussian::eval_normalised_inv_C(collected_xy[j], collected_conic_opacity[j].conic, glm::vec2(pix))
-                            : stroke::gaussian::eval_exponential_inv_C(collected_xy[j], collected_conic_opacity[j].conic, glm::vec2(pix));
+                        const auto g_eval = stroke::gaussian::eval_exponential_inv_C(collected_xy[j], collected_conic_opacity[j].conic, glm::vec2(pix));
                         // Eq. (2) from 3D Gaussian splatting paper.
                         // Obtain alpha by multiplying with Gaussian opacity
                         // and its exponential falloff from mean.
