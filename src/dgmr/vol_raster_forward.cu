@@ -21,7 +21,7 @@
 
 #include "constants.h"
 #include "raster_bin_sizers.h"
-#include "utils.h"
+#include "math.h"
 #include "vol_raster_forward.h"
 
 #include <stroke/gaussian.h>

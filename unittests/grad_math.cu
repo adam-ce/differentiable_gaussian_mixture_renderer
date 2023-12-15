@@ -20,7 +20,7 @@
 #include <stroke/unittest/gradcheck.h>
 
 #include <catch2/catch_test_macros.hpp>
-#include <dgmr/grad/utils.h>
+#include <dgmr/grad/math.h>
 
 #include "unit_test_utils.h"
 

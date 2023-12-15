@@ -14,9 +14,9 @@ if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
 endif()
 
 add_executable(dgmr_unittests
-    utils.cpp
+    math.cpp
     raster_bin_sizer.cpp
-    grad_utils.cu
+    grad_math.cu
     unit_test_utils.h
 )
 

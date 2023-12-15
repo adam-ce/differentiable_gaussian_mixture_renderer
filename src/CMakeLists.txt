@@ -37,7 +37,7 @@ add_library(differentiable_gaussian_mixture_renderer
 	dgmr/splat_forward.h	dgmr/splat_forward.cu
     dgmr/vol_raster_forward.h	dgmr/vol_raster_forward.cu
 	dgmr/constants.h
-    dgmr/utils.h    dgmr/grad/utils.h
+    dgmr/math.h    dgmr/grad/math.h
     dgmr/raster_bin_sizers.h
 )
 target_compile_definitions(differentiable_gaussian_mixture_renderer INTERFACE GLM_FORCE_LEFT_HANDED)

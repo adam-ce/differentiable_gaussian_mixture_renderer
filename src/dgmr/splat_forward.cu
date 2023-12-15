@@ -24,7 +24,7 @@
 
 #include "constants.h"
 #include "splat_forward.h"
-#include "utils.h"
+#include "math.h"
 
 namespace {
 using namespace dgmr;

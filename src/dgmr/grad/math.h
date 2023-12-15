@@ -24,7 +24,7 @@
 #include <stroke/grad/util.h>
 #include <stroke/linalg.h>
 
-#include "../utils.h"
+#include "../math.h"
 
 namespace dgmr::utils::grad {
 

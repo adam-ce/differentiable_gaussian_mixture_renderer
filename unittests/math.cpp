@@ -22,7 +22,7 @@
 #include <catch2/catch_template_test_macros.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include <dgmr/utils.h>
+#include <dgmr/math.h>
 
 #include "unit_test_utils.h"
 

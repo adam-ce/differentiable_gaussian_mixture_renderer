@@ -19,7 +19,7 @@
 #pragma once
 
 #include <catch2/catch_approx.hpp>
-#include <dgmr/utils.h>
+#include <dgmr/math.h>
 #include <glm/glm.hpp>
 #include <stroke/linalg.h>
 #include <whack/random/generators.h>
