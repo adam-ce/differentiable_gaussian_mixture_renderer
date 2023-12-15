@@ -59,7 +59,7 @@ struct SplatForwardData {
 
 namespace splat {
     struct config {
-        static constexpr bool use_orientation_dependent_gaussian_density = true; // false for rendering original gaussian splatting results
+        static constexpr bool use_physical_density = false; // false for rendering original gaussian splatting results
     };
 } // namespace splat
 

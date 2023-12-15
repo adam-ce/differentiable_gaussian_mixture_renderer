@@ -161,7 +161,7 @@ STROKE_DEVICES_INLINE stroke::geometry::Aabb1f gaussian_to_point_distance_bounds
     return { stroke::geometry::distance(transformed_bb, transformed_query_point), stroke::geometry::largest_distance_to(transformed_bb, transformed_query_point) };
 }
 
-template <bool orientation_dependent_density, typename scalar_t>
+template <bool use_physical_density, typename scalar_t>
 STROKE_DEVICES_INLINE Gaussian2d<scalar_t> splat(scalar_t weight, const glm::vec<3, scalar_t>& centroid, const stroke::Cov3<scalar_t>& cov3D, const Camera<scalar_t>& camera, scalar_t filter_kernel_size)
 {
     using vec3_t = glm::vec<3, scalar_t>;
@@ -197,7 +197,7 @@ STROKE_DEVICES_INLINE Gaussian2d<scalar_t> splat(scalar_t weight, const glm::vec
 
     const auto filter_kernel = stroke::Cov2<scalar_t>(filter_kernel_size);
     screen_space_gaussian.cov = affine_transform_and_cut(cov3D, T);
-    if (orientation_dependent_density) {
+    if (use_physical_density) {
         screen_space_gaussian.cov += filter_kernel;
         const auto J = make_jakobian(t, l_prime);
         const auto detJ = det(J);

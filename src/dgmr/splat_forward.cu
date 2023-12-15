@@ -175,8 +175,8 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
                     return;
 
                 const auto cov3d = utils::compute_cov(data.gm_cov_scales(idx) * data.cov_scale_multiplier, data.gm_cov_rotations(idx));
-
-                const auto screen_space_gaussian = utils::splat<splat::config::use_orientation_dependent_gaussian_density>(data.gm_weights(idx), centroid, cov3d, camera, 0.3f);
+                
+                const auto screen_space_gaussian = utils::splat<splat::config::use_physical_density>(data.gm_weights(idx), centroid, cov3d, camera, 0.3f);
 
                 // using the more aggressive computation for calculating overlapping tiles:
                 {
