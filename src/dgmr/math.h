@@ -253,7 +253,10 @@ STROKE_DEVICES_INLINE Gaussian2dAndValueCache<scalar_t> splat_with_cache(scalar_
     if (orientation_dependent_density) {
         screen_space_gaussian.cov += filter_kernel;
         const auto J = make_jakobian(t, l_prime);
-        screen_space_gaussian.weight = weight * camera.focal_x * camera.focal_y * det(J) * stroke::gaussian::norm_factor(screen_space_gaussian.cov); // det(S) == camera.focal_x * camera.focal_y
+        const auto detJ = det(J);
+        const auto detS = camera.focal_x * camera.focal_y;
+        const auto norm_factor = stroke::gaussian::norm_factor(screen_space_gaussian.cov);
+        screen_space_gaussian.weight = weight * detS * detJ * norm_factor;
     } else {
         scalar_t aa_weight_factor = 1;
         cuda::std::tie(screen_space_gaussian.cov, aa_weight_factor) = math::convolve_unnormalised_with_normalised(screen_space_gaussian.cov, filter_kernel);
