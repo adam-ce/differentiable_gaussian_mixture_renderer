@@ -233,14 +233,14 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                 if (projected_centroid.z < 0.0)
                     return;
 
-                const auto cov3d = utils::compute_cov(clamp_cov_scales(data.gm_cov_scales(idx)), data.gm_cov_rotations(idx));
+                const auto cov3d = math::compute_cov(clamp_cov_scales(data.gm_cov_scales(idx)), data.gm_cov_rotations(idx));
 
                 // low pass filter to combat aliasing
                 const auto filter_kernel_size = glm::distance(centroid, data.cam_poition) * aa_distance_multiplier;
-                const auto filter_kernel = utils::orient_filter_kernel<float>({ .direction = glm::normalize(data.cam_poition - centroid), .kernel_scales = { filter_kernel_size, filter_kernel_size, 0 } });
+                const auto filter_kernel = math::orient_filter_kernel<float>({ .direction = glm::normalize(data.cam_poition - centroid), .kernel_scales = { filter_kernel_size, filter_kernel_size, 0 } });
                 const auto filtered_cov_3d = cov3d + filter_kernel;
                 const auto cov2d = computeCov2D(centroid, focal_x, focal_y, data.tan_fovx, data.tan_fovy, cov3d, data.view_matrix);
-                const auto [filtered_cov_2d, aa_weight_factor] = utils::convolve_unnormalised_with_normalised(cov2d, stroke::Cov2<float>(config::filter_kernel_SD * config::filter_kernel_SD));
+                const auto [filtered_cov_2d, aa_weight_factor] = math::convolve_unnormalised_with_normalised(cov2d, stroke::Cov2<float>(config::filter_kernel_SD * config::filter_kernel_SD));
                 g_filtered_weights(idx) = aa_weight_factor * data.gm_weights(idx);
 
                 // using the more aggressive computation for calculating overlapping tiles:
@@ -264,7 +264,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                 }
 
                 //				g_depths(idx) = glm::length(data.cam_poition - centroid);
-                g_depths(idx) = utils::gaussian_to_point_distance_bounds(
+                g_depths(idx) = math::gaussian_to_point_distance_bounds(
                     centroid, data.gm_cov_scales(idx), data.gm_cov_rotations(idx), vol_raster::config::gaussian_relevance_sigma, data.cam_poition)
                                     .max;
 
@@ -425,7 +425,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                 __shared__ stroke::Cov3<float> collected_inv_cov3[render_block_size];
 
                 whack::Array<glm::vec4, vol_raster::config::n_rasterisation_steps> rasterised_data = {};
-                utils::RasterBinSizer<vol_raster::config> rasterisation_bin_sizer;
+                math::RasterBinSizer<vol_raster::config> rasterisation_bin_sizer;
 
                 // Iterate over batches until all done or range is complete: compute max depth
                 for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {

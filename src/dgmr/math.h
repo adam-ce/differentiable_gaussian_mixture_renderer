@@ -28,7 +28,7 @@
 #include <stroke/utility.h>
 #include <stroke/welford.h>
 
-namespace dgmr::utils {
+namespace dgmr::math {
 
 template <typename scalar_t>
 struct Gaussian2d {
@@ -192,7 +192,7 @@ STROKE_DEVICES_INLINE Gaussian2d<scalar_t> splat(scalar_t weight, const glm::vec
     mat3_t T = SJ * W;
 
     const auto projected_centroid = project(centroid, camera.view_projection_matrix);
-    dgmr::utils::Gaussian2d<scalar_t> screen_space_gaussian;
+    dgmr::math::Gaussian2d<scalar_t> screen_space_gaussian;
     screen_space_gaussian.centroid = ndc2screen(projected_centroid, camera.fb_width, camera.fb_height);
 
     const auto filter_kernel = stroke::Cov2<scalar_t>(filter_kernel_size);
@@ -206,7 +206,7 @@ STROKE_DEVICES_INLINE Gaussian2d<scalar_t> splat(scalar_t weight, const glm::vec
         screen_space_gaussian.weight = weight * detS * detJ * norm_factor;
     } else {
         scalar_t aa_weight_factor = 1;
-        cuda::std::tie(screen_space_gaussian.cov, aa_weight_factor) = utils::convolve_unnormalised_with_normalised(screen_space_gaussian.cov, filter_kernel);
+        cuda::std::tie(screen_space_gaussian.cov, aa_weight_factor) = math::convolve_unnormalised_with_normalised(screen_space_gaussian.cov, filter_kernel);
         screen_space_gaussian.weight = weight * aa_weight_factor;
     }
 
@@ -245,7 +245,7 @@ STROKE_DEVICES_INLINE Gaussian2dAndValueCache<scalar_t> splat_with_cache(scalar_
     mat3_t T = SJ * W;
 
     const auto projected_centroid = project(centroid, camera.view_projection_matrix);
-    dgmr::utils::Gaussian2d<scalar_t> screen_space_gaussian;
+    dgmr::math::Gaussian2d<scalar_t> screen_space_gaussian;
     screen_space_gaussian.centroid = ndc2screen(projected_centroid, camera.fb_width, camera.fb_height);
 
     const auto filter_kernel = stroke::Cov2<scalar_t>(filter_kernel_size);
@@ -256,10 +256,10 @@ STROKE_DEVICES_INLINE Gaussian2dAndValueCache<scalar_t> splat_with_cache(scalar_
         screen_space_gaussian.weight = weight * camera.focal_x * camera.focal_y * det(J) * stroke::gaussian::norm_factor(screen_space_gaussian.cov); // det(S) == camera.focal_x * camera.focal_y
     } else {
         scalar_t aa_weight_factor = 1;
-        cuda::std::tie(screen_space_gaussian.cov, aa_weight_factor) = utils::convolve_unnormalised_with_normalised(screen_space_gaussian.cov, filter_kernel);
+        cuda::std::tie(screen_space_gaussian.cov, aa_weight_factor) = math::convolve_unnormalised_with_normalised(screen_space_gaussian.cov, filter_kernel);
         screen_space_gaussian.weight = weight * aa_weight_factor;
     }
 
     return { screen_space_gaussian, T, unclamped_t };
 }
-} // namespace dgmr::utils
+} // namespace dgmr::math

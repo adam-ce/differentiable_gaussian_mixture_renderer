@@ -26,7 +26,7 @@
 
 #include "../math.h"
 
-namespace dgmr::utils::grad {
+namespace dgmr::math::grad {
 
 template <typename scalar_t>
 STROKE_DEVICES_INLINE glm::vec<3, scalar_t> project(const glm::vec<3, scalar_t>& point, const glm::mat<4, 4, scalar_t>& projection_matrix, const glm::vec<3, scalar_t>& grad)
@@ -155,14 +155,14 @@ splat(scalar_t weight, const glm::vec<3, scalar_t>& centroid, const stroke::Cov3
     const vec3_t t = clamp_to_fov(unclamped_t); // clamps the size of the jakobian
 
     const scalar_t l_prime = glm::length(t);
-    const auto J = dgmr::utils::make_jakobian(t, l_prime);
-    const auto SJ = dgmr::utils::make_jakobian(t, l_prime, camera.focal_x, camera.focal_y);
+    const auto J = dgmr::math::make_jakobian(t, l_prime);
+    const auto SJ = dgmr::math::make_jakobian(t, l_prime, camera.focal_x, camera.focal_y);
 
     const mat3_t W = mat3_t(camera.view_matrix);
     const mat3_t T = SJ * W;
 
-    const auto unfiltered_screenspace_cov = dgmr::utils::affine_transform_and_cut(cov3D, T);
-    const auto projected_centroid = dgmr::utils::project(centroid, camera.view_projection_matrix);
+    const auto unfiltered_screenspace_cov = dgmr::math::affine_transform_and_cut(cov3D, T);
+    const auto projected_centroid = dgmr::math::project(centroid, camera.view_projection_matrix);
     const auto det_J = det(J);
     assert(det_J > 0);
 
@@ -190,7 +190,7 @@ splat(scalar_t weight, const glm::vec<3, scalar_t>& centroid, const stroke::Cov3
 
     } else {
         // screen_space_gaussian.weight *= aa_weight_factor;
-        const auto aa_weight_factor = cuda::std::get<1>(utils::convolve_unnormalised_with_normalised(unfiltered_screenspace_cov, filter_kernel));
+        const auto aa_weight_factor = cuda::std::get<1>(math::convolve_unnormalised_with_normalised(unfiltered_screenspace_cov, filter_kernel));
         grad_weight *= aa_weight_factor;
         const auto grad_aa_weight_factor = incoming_grad.weight * weight;
 
@@ -247,14 +247,14 @@ splat_with_cache(scalar_t weight, const glm::vec<3, scalar_t>& centroid, const s
     const vec3_t t = clamp_to_fov(unclamped_t); // clamps the size of the jakobian
 
     const scalar_t l_prime = glm::length(t);
-    const auto J = dgmr::utils::make_jakobian(t, l_prime);
-    const auto SJ = dgmr::utils::make_jakobian(t, l_prime, camera.focal_x, camera.focal_y);
+    const auto J = dgmr::math::make_jakobian(t, l_prime);
+    const auto SJ = dgmr::math::make_jakobian(t, l_prime, camera.focal_x, camera.focal_y);
 
     const mat3_t W = mat3_t(camera.view_matrix);
     const mat3_t& T = cache.T; // SJ * W
 
-    const auto unfiltered_screenspace_cov = dgmr::utils::affine_transform_and_cut(cov3D, T);
-    const auto projected_centroid = dgmr::utils::project(centroid, camera.view_projection_matrix);
+    const auto unfiltered_screenspace_cov = dgmr::math::affine_transform_and_cut(cov3D, T);
+    const auto projected_centroid = dgmr::math::project(centroid, camera.view_projection_matrix);
     const auto det_J = det(J);
     assert(det_J > 0);
 
@@ -282,7 +282,7 @@ splat_with_cache(scalar_t weight, const glm::vec<3, scalar_t>& centroid, const s
 
     } else {
         // screen_space_gaussian.weight *= aa_weight_factor;
-        const auto aa_weight_factor = cuda::std::get<1>(utils::convolve_unnormalised_with_normalised(unfiltered_screenspace_cov, filter_kernel));
+        const auto aa_weight_factor = cuda::std::get<1>(math::convolve_unnormalised_with_normalised(unfiltered_screenspace_cov, filter_kernel));
         grad_weight *= aa_weight_factor;
         const auto grad_aa_weight_factor = incoming_grad.weight * weight;
 
@@ -316,4 +316,4 @@ splat_with_cache(scalar_t weight, const glm::vec<3, scalar_t>& centroid, const s
     // return screen_space_gaussian;
     return { grad_weight, grad_centroid, grad_cov3d };
 }
-} // namespace dgmr::utils::grad
+} // namespace dgmr::math::grad

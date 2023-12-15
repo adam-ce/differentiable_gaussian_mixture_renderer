@@ -151,7 +151,7 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
     auto g_tiles_touched_data = torch::empty({ n_gaussians, 1 }, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
     auto g_tiles_touched = whack::make_tensor_view<uint32_t>(g_tiles_touched_data, n_gaussians);
 
-    utils::Camera<float> camera {
+    math::Camera<float> camera {
         data.view_matrix, data.proj_matrix, focal_x, focal_y, data.tan_fovx, data.tan_fovy, fb_width, fb_height
     };
 
@@ -174,9 +174,9 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
                 if ((data.view_matrix * glm::vec4(centroid, 1.f)).z < 0.2) // adam doesn't understand, why projection matrix > 0 isn't enough.
                     return;
 
-                const auto cov3d = utils::compute_cov(data.gm_cov_scales(idx) * data.cov_scale_multiplier, data.gm_cov_rotations(idx));
-                
-                const auto screen_space_gaussian = utils::splat<splat::config::use_physical_density>(data.gm_weights(idx), centroid, cov3d, camera, 0.3f);
+                const auto cov3d = math::compute_cov(data.gm_cov_scales(idx) * data.cov_scale_multiplier, data.gm_cov_rotations(idx));
+
+                const auto screen_space_gaussian = math::splat<splat::config::use_physical_density>(data.gm_weights(idx), centroid, cov3d, camera, 0.3f);
 
                 // using the more aggressive computation for calculating overlapping tiles:
                 {

@@ -33,7 +33,7 @@ struct RasterBinSizerConfig {
 };
 } // namespace
 
-TEMPLATE_TEST_CASE("dgmr raster bin sizer", "", dgmr::utils::RasterBinSizer<RasterBinSizerConfig>, dgmr::utils::RasterBinSizer_1<RasterBinSizerConfig>)
+TEMPLATE_TEST_CASE("dgmr raster bin sizer", "", dgmr::math::RasterBinSizer<RasterBinSizerConfig>, dgmr::math::RasterBinSizer_1<RasterBinSizerConfig>)
 {
     using RasterBinSizer = TestType;
     SECTION("start empty")

@@ -24,7 +24,7 @@
 
 #include "unit_test_utils.h"
 
-using namespace dgmr::utils;
+using namespace dgmr::math;
 using namespace dgmr::unittest;
 
 namespace {
@@ -106,7 +106,7 @@ void check_project()
         const auto cam = random_camera<scalar_t>(&rnd);
         const auto fun = [cam](const whack::Tensor<scalar_t, 1>& input) {
             const auto pos = stroke::extract<vec3_t>(input);
-            const auto p = dgmr::utils::project<scalar_t>(pos, cam.view_projection_matrix);
+            const auto p = dgmr::math::project<scalar_t>(pos, cam.view_projection_matrix);
             return stroke::pack_tensor<scalar_t>(p);
         };
 
@@ -135,7 +135,7 @@ void check_affine_transform_and_cut()
     for (int i = 0; i < 10; ++i) {
         const auto fun = [](const whack::Tensor<scalar_t, 1>& input) {
             const auto [cov, mat] = stroke::extract<cov3_t, mat3_t>(input);
-            const auto p = dgmr::utils::affine_transform_and_cut<scalar_t>(cov, mat);
+            const auto p = dgmr::math::affine_transform_and_cut<scalar_t>(cov, mat);
             return stroke::pack_tensor<scalar_t>(p);
         };
 
@@ -163,7 +163,7 @@ void check_convolve_unnormalised_with_normalised(double filter_kernel_size)
     const auto filter_kernel = stroke::Cov2<scalar_t>(filter_kernel_size);
     const auto fun = [filter_kernel](const whack::Tensor<scalar_t, 1>& input) {
         const auto cov = stroke::extract<cov2_t>(input);
-        const auto [filtered_cov, weight_factor] = dgmr::utils::convolve_unnormalised_with_normalised<2, scalar_t>(cov, filter_kernel);
+        const auto [filtered_cov, weight_factor] = dgmr::math::convolve_unnormalised_with_normalised<2, scalar_t>(cov, filter_kernel);
         return stroke::pack_tensor<scalar_t>(filtered_cov, weight_factor);
     };
 
@@ -197,7 +197,7 @@ void check_ndc2screent()
         unsigned height = unsigned(rnd.uniform() * 500) + 200;
         const auto fun = [=](const whack::Tensor<scalar_t, 1>& input) {
             const auto pos = stroke::extract<vec3_t>(input);
-            const auto p = dgmr::utils::ndc2screen<scalar_t>(pos, width, height);
+            const auto p = dgmr::math::ndc2screen<scalar_t>(pos, width, height);
             return stroke::pack_tensor<scalar_t>(p);
         };
 
@@ -225,7 +225,7 @@ void check_make_jakobian()
         const auto cam = random_camera<scalar_t>(&rnd);
         const auto fun = [cam](const whack::Tensor<scalar_t, 1>& input) {
             const auto [pos, l_prime] = stroke::extract<vec3_t, scalar_t>(input);
-            const auto p1 = dgmr::utils::make_jakobian<scalar_t>(pos, l_prime, 1, 1);
+            const auto p1 = dgmr::math::make_jakobian<scalar_t>(pos, l_prime, 1, 1);
             //            const auto p2 = dgmr::utils::make_jakobian<scalar_t>(pos, l_prime, cam.focal_x, cam.focal_y);
             //            return stroke::pack_tensor<scalar_t>(p1, p2);
             return stroke::pack_tensor<scalar_t>(p1);

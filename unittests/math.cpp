@@ -29,7 +29,7 @@
 namespace {
 
 using namespace dgmr::unittest;
-using namespace dgmr::utils;
+using namespace dgmr::math;
 
 template <bool orientation_dependent_gaussian_density>
 void check_splat(double filter_kernel_size)
@@ -75,32 +75,32 @@ TEST_CASE("dgmr utils: splat vs splat_with_cache (withOUT orientation dependence
 
 TEST_CASE("dgmr utils: rotation matrix for rotating z into given direction")
 {
-    CHECK(dgmr::utils::rotation_matrix_from(glm::vec3(1, 0, 0)) * glm::vec3(0, 0, 1) == glm::vec3(1, 0, 0));
-    CHECK(dgmr::utils::rotation_matrix_from(glm::vec3(0, 1, 0)) * glm::vec3(0, 0, 1) == glm::vec3(0, 1, 0));
-    CHECK(dgmr::utils::rotation_matrix_from(glm::vec3(0, 0, 1)) * glm::vec3(0, 0, 1) == glm::vec3(0, 0, 1));
-    CHECK(dgmr::utils::rotation_matrix_from(glm::vec3(-1, 0, 0)) * glm::vec3(0, 0, 1) == glm::vec3(-1, 0, 0));
-    CHECK(dgmr::utils::rotation_matrix_from(glm::vec3(0, -1, 0)) * glm::vec3(0, 0, 1) == glm::vec3(0, -1, 0));
-    CHECK(dgmr::utils::rotation_matrix_from(glm::vec3(0, 0, -1)) * glm::vec3(0, 0, 1) == glm::vec3(0, 0, -1));
+    CHECK(dgmr::math::rotation_matrix_from(glm::vec3(1, 0, 0)) * glm::vec3(0, 0, 1) == glm::vec3(1, 0, 0));
+    CHECK(dgmr::math::rotation_matrix_from(glm::vec3(0, 1, 0)) * glm::vec3(0, 0, 1) == glm::vec3(0, 1, 0));
+    CHECK(dgmr::math::rotation_matrix_from(glm::vec3(0, 0, 1)) * glm::vec3(0, 0, 1) == glm::vec3(0, 0, 1));
+    CHECK(dgmr::math::rotation_matrix_from(glm::vec3(-1, 0, 0)) * glm::vec3(0, 0, 1) == glm::vec3(-1, 0, 0));
+    CHECK(dgmr::math::rotation_matrix_from(glm::vec3(0, -1, 0)) * glm::vec3(0, 0, 1) == glm::vec3(0, -1, 0));
+    CHECK(dgmr::math::rotation_matrix_from(glm::vec3(0, 0, -1)) * glm::vec3(0, 0, 1) == glm::vec3(0, 0, -1));
 
-    CHECK(dgmr::utils::rotation_matrix_from(glm::normalize(glm::vec3(-0.8, .7, 0.2))) * glm::vec3(0, 0, 1) == glm::normalize(glm::vec3(-0.8, .7, 0.2)));
-    CHECK(dgmr::utils::rotation_matrix_from(glm::normalize(glm::vec3(0.8, -.7, -0.2))) * glm::vec3(0, 0, 1) == glm::normalize(glm::vec3(0.8, -.7, -0.2)));
-    CHECK(dgmr::utils::rotation_matrix_from(glm::normalize(glm::vec3(0.0, .7, -0.2))) * glm::vec3(0, 0, 1) == glm::normalize(glm::vec3(0.0, .7, -0.2)));
+    CHECK(dgmr::math::rotation_matrix_from(glm::normalize(glm::vec3(-0.8, .7, 0.2))) * glm::vec3(0, 0, 1) == glm::normalize(glm::vec3(-0.8, .7, 0.2)));
+    CHECK(dgmr::math::rotation_matrix_from(glm::normalize(glm::vec3(0.8, -.7, -0.2))) * glm::vec3(0, 0, 1) == glm::normalize(glm::vec3(0.8, -.7, -0.2)));
+    CHECK(dgmr::math::rotation_matrix_from(glm::normalize(glm::vec3(0.0, .7, -0.2))) * glm::vec3(0, 0, 1) == glm::normalize(glm::vec3(0.0, .7, -0.2)));
 }
 TEST_CASE("dgmr utils: oriented filter kernel")
 {
-    CHECK(dgmr::utils::orient_filter_kernel<float>({ .direction = glm::vec3(1, 0, 0), .kernel_scales = glm::vec3(0, 0, 1) }) == stroke::Cov3(1.f, 0.f, 0.f, 0.f, 0.f, 0.f));
-    CHECK(dgmr::utils::orient_filter_kernel<float>({ .direction = glm::vec3(1, 0, 0), .kernel_scales = glm::vec3(1, 1, 0) }) == stroke::Cov3(0.f, 0.f, 0.f, 1.f, 0.f, 1.f));
-    CHECK(dgmr::utils::orient_filter_kernel<float>({ .direction = glm::vec3(0, 1, 0), .kernel_scales = glm::vec3(0, 0, 1) }) == stroke::Cov3(0.f, 0.f, 0.f, 1.f, 0.f, 0.f));
-    CHECK(dgmr::utils::orient_filter_kernel<float>({ .direction = glm::vec3(0, 1, 0), .kernel_scales = glm::vec3(1, 1, 0) }) == stroke::Cov3(1.f, 0.f, 0.f, 0.f, 0.f, 1.f));
-    CHECK(dgmr::utils::orient_filter_kernel<float>({ .direction = glm::vec3(0, 0, 1), .kernel_scales = glm::vec3(0, 0, 1) }) == stroke::Cov3(0.f, 0.f, 0.f, 0.f, 0.f, 1.f));
-    CHECK(dgmr::utils::orient_filter_kernel<float>({ .direction = glm::vec3(0, 0, 1), .kernel_scales = glm::vec3(1, 1, 0) }) == stroke::Cov3(1.f, 0.f, 0.f, 1.f, 0.f, 0.f));
+    CHECK(dgmr::math::orient_filter_kernel<float>({ .direction = glm::vec3(1, 0, 0), .kernel_scales = glm::vec3(0, 0, 1) }) == stroke::Cov3(1.f, 0.f, 0.f, 0.f, 0.f, 0.f));
+    CHECK(dgmr::math::orient_filter_kernel<float>({ .direction = glm::vec3(1, 0, 0), .kernel_scales = glm::vec3(1, 1, 0) }) == stroke::Cov3(0.f, 0.f, 0.f, 1.f, 0.f, 1.f));
+    CHECK(dgmr::math::orient_filter_kernel<float>({ .direction = glm::vec3(0, 1, 0), .kernel_scales = glm::vec3(0, 0, 1) }) == stroke::Cov3(0.f, 0.f, 0.f, 1.f, 0.f, 0.f));
+    CHECK(dgmr::math::orient_filter_kernel<float>({ .direction = glm::vec3(0, 1, 0), .kernel_scales = glm::vec3(1, 1, 0) }) == stroke::Cov3(1.f, 0.f, 0.f, 0.f, 0.f, 1.f));
+    CHECK(dgmr::math::orient_filter_kernel<float>({ .direction = glm::vec3(0, 0, 1), .kernel_scales = glm::vec3(0, 0, 1) }) == stroke::Cov3(0.f, 0.f, 0.f, 0.f, 0.f, 1.f));
+    CHECK(dgmr::math::orient_filter_kernel<float>({ .direction = glm::vec3(0, 0, 1), .kernel_scales = glm::vec3(1, 1, 0) }) == stroke::Cov3(1.f, 0.f, 0.f, 1.f, 0.f, 0.f));
 
-    CHECK(dgmr::utils::orient_filter_kernel<float>({ .direction = glm::vec3(1, 0, 0), .kernel_scales = glm::vec3(0, 0, 10) }) == stroke::Cov3(100.f, 0.f, 0.f, 0.f, 0.f, 0.f));
-    CHECK(dgmr::utils::orient_filter_kernel<float>({ .direction = glm::vec3(1, 0, 0), .kernel_scales = glm::vec3(10, 10, 0) }) == stroke::Cov3(0.f, 0.f, 0.f, 100.f, 0.f, 100.f));
-    CHECK(dgmr::utils::orient_filter_kernel<float>({ .direction = glm::vec3(0, 1, 0), .kernel_scales = glm::vec3(0, 0, 10) }) == stroke::Cov3(0.f, 0.f, 0.f, 100.f, 0.f, 0.f));
-    CHECK(dgmr::utils::orient_filter_kernel<float>({ .direction = glm::vec3(0, 1, 0), .kernel_scales = glm::vec3(10, 10, 0) }) == stroke::Cov3(100.f, 0.f, 0.f, 0.f, 0.f, 100.f));
-    CHECK(dgmr::utils::orient_filter_kernel<float>({ .direction = glm::vec3(0, 0, 1), .kernel_scales = glm::vec3(0, 0, 10) }) == stroke::Cov3(0.f, 0.f, 0.f, 0.f, 0.f, 100.f));
-    CHECK(dgmr::utils::orient_filter_kernel<float>({ .direction = glm::vec3(0, 0, 1), .kernel_scales = glm::vec3(10, 10, 0) }) == stroke::Cov3(100.f, 0.f, 0.f, 100.f, 0.f, 0.f));
+    CHECK(dgmr::math::orient_filter_kernel<float>({ .direction = glm::vec3(1, 0, 0), .kernel_scales = glm::vec3(0, 0, 10) }) == stroke::Cov3(100.f, 0.f, 0.f, 0.f, 0.f, 0.f));
+    CHECK(dgmr::math::orient_filter_kernel<float>({ .direction = glm::vec3(1, 0, 0), .kernel_scales = glm::vec3(10, 10, 0) }) == stroke::Cov3(0.f, 0.f, 0.f, 100.f, 0.f, 100.f));
+    CHECK(dgmr::math::orient_filter_kernel<float>({ .direction = glm::vec3(0, 1, 0), .kernel_scales = glm::vec3(0, 0, 10) }) == stroke::Cov3(0.f, 0.f, 0.f, 100.f, 0.f, 0.f));
+    CHECK(dgmr::math::orient_filter_kernel<float>({ .direction = glm::vec3(0, 1, 0), .kernel_scales = glm::vec3(10, 10, 0) }) == stroke::Cov3(100.f, 0.f, 0.f, 0.f, 0.f, 100.f));
+    CHECK(dgmr::math::orient_filter_kernel<float>({ .direction = glm::vec3(0, 0, 1), .kernel_scales = glm::vec3(0, 0, 10) }) == stroke::Cov3(0.f, 0.f, 0.f, 0.f, 0.f, 100.f));
+    CHECK(dgmr::math::orient_filter_kernel<float>({ .direction = glm::vec3(0, 0, 1), .kernel_scales = glm::vec3(10, 10, 0) }) == stroke::Cov3(100.f, 0.f, 0.f, 100.f, 0.f, 0.f));
 }
 
 TEST_CASE("dgmr utils: gaussian_bounds")
@@ -129,7 +129,7 @@ TEST_CASE("dgmr utils: gaussian_bounds")
 
     };
     for (const auto& d : data) {
-        const auto bounds = dgmr::utils::gaussian_to_point_distance_bounds(d.gauss_centr, d.gauss_size, d.gauss_rotation, d.gauss_iso_ellipsoid, d.query_point);
+        const auto bounds = dgmr::math::gaussian_to_point_distance_bounds(d.gauss_centr, d.gauss_size, d.gauss_rotation, d.gauss_iso_ellipsoid, d.query_point);
 
         CHECK(bounds.min == Catch::Approx(d.expected_bounds.min).scale(10));
         CHECK(bounds.max == Catch::Approx(d.expected_bounds.max).scale(10));

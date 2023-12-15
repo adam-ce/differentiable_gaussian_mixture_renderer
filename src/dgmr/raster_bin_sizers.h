@@ -24,7 +24,7 @@
 #include <stroke/utility.h>
 #include <whack/array.h>
 
-namespace dgmr::utils {
+namespace dgmr::math {
 
 template <typename config>
 struct RasterBinSizer_1 {

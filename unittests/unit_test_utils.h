@@ -45,11 +45,11 @@ stroke::Cov<n_dims, scalar_t> host_random_cov(Generator* rnd)
 }
 
 template <typename scalar_t, typename Generator>
-dgmr::utils::Camera<scalar_t> random_camera(Generator* rnd)
+dgmr::math::Camera<scalar_t> random_camera(Generator* rnd)
 {
     const scalar_t fovy = scalar_t(3.14 / 4);
 
-    dgmr::utils::Camera<scalar_t> c;
+    dgmr::math::Camera<scalar_t> c;
     c.fb_height = 600;
     c.fb_width = 800;
     const auto aspect = scalar_t(c.fb_width) / scalar_t(c.fb_height);
