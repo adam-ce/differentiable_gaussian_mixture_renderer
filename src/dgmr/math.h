@@ -70,6 +70,13 @@ STROKE_DEVICES_INLINE stroke::Cov2<scalar_t> affine_transform_and_cut(const stro
 }
 
 template <typename scalar_t>
+STROKE_DEVICES_INLINE scalar_t integrate_exponential(const glm::vec<3, scalar_t>& scales)
+{
+    constexpr auto factor = scalar_t(gcem::sqrt(gcem::pow(2 * glm::pi<double>(), double(3))));
+    return factor * scales.x * scales.y * scales.z;
+}
+
+template <typename scalar_t>
 STROKE_DEVICES_INLINE glm::vec<3, scalar_t> project(const glm::vec<3, scalar_t>& point, const glm::mat<4, 4, scalar_t>& projection_matrix)
 {
     auto pp = projection_matrix * glm::vec<4, scalar_t>(point, 1);

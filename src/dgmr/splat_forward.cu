@@ -174,9 +174,11 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
                 if ((data.view_matrix * glm::vec4(centroid, 1.f)).z < 0.2) // adam doesn't understand, why projection matrix > 0 isn't enough.
                     return;
 
-                const auto cov3d = math::compute_cov(data.gm_cov_scales(idx) * data.cov_scale_multiplier, data.gm_cov_rotations(idx));
+                const auto scales = data.gm_cov_scales(idx);
+                const auto cov3d = math::compute_cov(scales * data.cov_scale_multiplier, data.gm_cov_rotations(idx));
+                const auto weight = splat::config::use_physical_density ? data.gm_weights(idx) * math::integrate_exponential(scales) : data.gm_weights(idx);
 
-                const auto screen_space_gaussian = math::splat<splat::config::use_physical_density>(data.gm_weights(idx), centroid, cov3d, camera, 0.3f);
+                const auto screen_space_gaussian = math::splat<splat::config::use_physical_density>(weight, centroid, cov3d, camera, 0.3f);
 
                 // using the more aggressive computation for calculating overlapping tiles:
                 {

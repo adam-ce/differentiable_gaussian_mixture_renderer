@@ -247,6 +247,33 @@ void check_make_jakobian()
     }
 }
 
+void check_integrate_exponential()
+{
+    using scalar_t = double;
+    using vec3_t = glm::vec<3, scalar_t>;
+    using cov3_t = stroke::Cov3<scalar_t>;
+
+    whack::random::HostGenerator<scalar_t> rnd;
+
+    for (int i = 0; i < 10; ++i) {
+        const auto fun = [](const whack::Tensor<scalar_t, 1>& input) {
+            const auto scales = stroke::extract<vec3_t>(input);
+            const auto i = dgmr::math::integrate_exponential<scalar_t>(scales);
+            return stroke::pack_tensor<scalar_t>(i);
+        };
+
+        const auto fun_grad = [](const whack::Tensor<scalar_t, 1>& input, const whack::Tensor<scalar_t, 1>& grad_output) {
+            const auto scales = stroke::extract<vec3_t>(input);
+            const auto grad_incoming = stroke::extract<scalar_t>(grad_output);
+            const auto grad_outgoing = grad::integrate_exponential<scalar_t>(scales, grad_incoming);
+            return stroke::pack_tensor<scalar_t>(grad_outgoing);
+        };
+
+        const auto test_data = stroke::pack_tensor<scalar_t>(vec3_t(rnd.uniform(), rnd.uniform(), rnd.uniform()));
+        stroke::check_gradient(fun, fun_grad, test_data, scalar_t(0.000001));
+    }
+}
+
 } // namespace
 
 TEST_CASE("dgmr splat gradient (with orientation dependence, filter kernel size 0)")
@@ -307,4 +334,9 @@ TEST_CASE("dgmr ndc2screen gradient")
 TEST_CASE("dgmr make_jakobian gradient")
 {
     check_make_jakobian();
+}
+
+TEST_CASE("dgmr integrate_exponential gradient")
+{
+    check_integrate_exponential();
 }
