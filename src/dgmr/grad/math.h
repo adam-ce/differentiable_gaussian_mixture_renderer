@@ -317,6 +317,15 @@ splat_with_cache(scalar_t weight, const glm::vec<3, scalar_t>& centroid, const s
     return { grad_weight, grad_centroid, grad_cov3d };
 }
 
+template<typename scalar_t>
+STROKE_DEVICES_INLINE glm::vec<2, scalar_t> integrate_exponential(const glm::vec<2, scalar_t> &scales, scalar_t grad)
+{
+    constexpr auto factor = scalar_t(gcem::sqrt(gcem::pow(2 * glm::pi<double>(), double(2))));
+    // return factor * scales.x * scales.y * scales.z;
+    const auto gf = grad * factor;
+    return {gf * scales.y, gf * scales.x};
+}
+
 template <typename scalar_t>
 STROKE_DEVICES_INLINE glm::vec<3, scalar_t> integrate_exponential(const glm::vec<3, scalar_t>& scales, scalar_t grad)
 {

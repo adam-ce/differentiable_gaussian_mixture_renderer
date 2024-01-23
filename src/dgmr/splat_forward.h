@@ -22,6 +22,8 @@
 #include <whack/TensorView.h>
 #include <whack/array.h>
 
+#include "types.h"
+
 namespace dgmr {
 
 struct Statistics {
@@ -59,7 +61,7 @@ struct SplatForwardData {
 
 namespace splat {
     struct config {
-        static constexpr bool use_physical_density = false; // false for rendering original gaussian splatting results
+        static constexpr Formulation gaussian_mixture_formulation = Formulation::Ots; // false for rendering original gaussian splatting results
     };
 } // namespace splat
 

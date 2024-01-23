@@ -28,6 +28,8 @@
 #include <stroke/utility.h>
 #include <stroke/welford.h>
 
+#include "types.h"
+
 namespace dgmr::math {
 
 template <typename scalar_t>
@@ -60,13 +62,20 @@ struct Camera {
 };
 
 template <typename scalar_t>
-STROKE_DEVICES_INLINE stroke::Cov2<scalar_t> affine_transform_and_cut(const stroke::Cov3<scalar_t>& S, const glm::mat<3, 3, scalar_t>& M)
+STROKE_DEVICES_INLINE stroke::Cov2<scalar_t> affine_transform_and_cut(const stroke::Cov<3, scalar_t>& S, const glm::mat<3, 3, scalar_t>& M)
 {
     return {
         M[0][0] * (S[0] * M[0][0] + S[1] * M[1][0] + S[2] * M[2][0]) + M[1][0] * (S[1] * M[0][0] + S[3] * M[1][0] + S[4] * M[2][0]) + M[2][0] * (S[2] * M[0][0] + S[4] * M[1][0] + S[5] * M[2][0]),
         M[0][0] * (S[0] * M[0][1] + S[1] * M[1][1] + S[2] * M[2][1]) + M[1][0] * (S[1] * M[0][1] + S[3] * M[1][1] + S[4] * M[2][1]) + M[2][0] * (S[2] * M[0][1] + S[4] * M[1][1] + S[5] * M[2][1]),
         M[0][1] * (S[0] * M[0][1] + S[1] * M[1][1] + S[2] * M[2][1]) + M[1][1] * (S[1] * M[0][1] + S[3] * M[1][1] + S[4] * M[2][1]) + M[2][1] * (S[2] * M[0][1] + S[4] * M[1][1] + S[5] * M[2][1])
     };
+}
+
+template <typename scalar_t>
+STROKE_DEVICES_INLINE scalar_t integrate_exponential(const glm::vec<2, scalar_t>& scales)
+{
+    constexpr auto factor = scalar_t(gcem::sqrt(gcem::pow(2 * glm::pi<double>(), double(2))));
+    return factor * scales.x * scales.y;
 }
 
 template <typename scalar_t>
@@ -94,6 +103,29 @@ STROKE_DEVICES_INLINE glm::vec<2, scalar_t> ndc2screen(const glm::vec<3, scalar_
 }
 
 template <typename scalar_t>
+STROKE_DEVICES_INLINE glm::vec<2, scalar_t> larger2(const glm::vec<3, scalar_t>& vec)
+{
+    // if (vec[0] < vec[1] && vec[0] < vec[2])
+    //     return glm::vec<2, scalar_t>(vec[1], vec[2]);
+
+    // if (vec[1] < vec[0] && vec[1] < vec[2])
+    //     return glm::vec<2, scalar_t>(vec[0], vec[2]);
+
+    // return glm::vec<2, scalar_t>(vec[0], vec[1]);
+
+    if (vec[0] < vec[1]) {
+        if (vec[0] < vec[2])
+            return glm::vec<2, scalar_t>(vec[1], vec[2]);
+    }
+    else {
+        if (vec[1] < vec[2])
+            return glm::vec<2, scalar_t>(vec[0], vec[2]);
+    }
+
+    return glm::vec<2, scalar_t>(vec[0], vec[1]);
+}
+
+template <typename scalar_t>
 STROKE_DEVICES_INLINE glm::mat<3, 3, scalar_t> make_jakobian(const glm::vec<3, scalar_t>& t, scalar_t l_prime, scalar_t focal_x = 1, scalar_t focal_y = 1)
 {
     using mat3_t = glm::mat<3, 3, scalar_t>;
@@ -106,10 +138,11 @@ STROKE_DEVICES_INLINE glm::mat<3, 3, scalar_t> make_jakobian(const glm::vec<3, s
     // clang-format on
 }
 
-STROKE_DEVICES_INLINE stroke::Cov3<float> compute_cov(const glm::vec3& scale, const glm::quat& rot)
+template <typename scalar_t>
+STROKE_DEVICES_INLINE stroke::Cov3<scalar_t> compute_cov(const glm::vec<3, scalar_t>& scale, const glm::qua<scalar_t>& rot)
 {
-    const auto RS = glm::toMat3(rot) * glm::mat3(scale.x, 0, 0, 0, scale.y, 0, 0, 0, scale.z);
-    return stroke::Cov3<float>(RS * transpose(RS));
+    const auto RS = glm::toMat3(rot) * glm::mat<3, 3, scalar_t>(scale.x, 0, 0, 0, scale.y, 0, 0, 0, scale.z);
+    return stroke::Cov3<scalar_t>(RS * transpose(RS)); // == R * S * S' * R' == R * (S * S) * R' // (RS)' == S'R'
 }
 
 template <typename scalar_t>
@@ -168,8 +201,8 @@ STROKE_DEVICES_INLINE stroke::geometry::Aabb1f gaussian_to_point_distance_bounds
     return { stroke::geometry::distance(transformed_bb, transformed_query_point), stroke::geometry::largest_distance_to(transformed_bb, transformed_query_point) };
 }
 
-template <bool use_physical_density, typename scalar_t>
-STROKE_DEVICES_INLINE Gaussian2d<scalar_t> splat(scalar_t weight, const glm::vec<3, scalar_t>& centroid, const stroke::Cov3<scalar_t>& cov3D, const Camera<scalar_t>& camera, scalar_t filter_kernel_size)
+template <Formulation formulation, typename scalar_t>
+STROKE_DEVICES_INLINE Gaussian2d<scalar_t> splat(scalar_t weight, const glm::vec<3, scalar_t>& centroid, const glm::vec<3, scalar_t>& cov3d_scale, const glm::qua<scalar_t>& cov3d_rot, const Camera<scalar_t>& camera, scalar_t filter_kernel_size)
 {
     using vec3_t = glm::vec<3, scalar_t>;
     using vec4_t = glm::vec<4, scalar_t>;
@@ -202,74 +235,106 @@ STROKE_DEVICES_INLINE Gaussian2d<scalar_t> splat(scalar_t weight, const glm::vec
     dgmr::math::Gaussian2d<scalar_t> screen_space_gaussian;
     screen_space_gaussian.centroid = ndc2screen(projected_centroid, camera.fb_width, camera.fb_height);
 
+    const auto cov3d = math::compute_cov(cov3d_scale, cov3d_rot);
+    screen_space_gaussian.cov = affine_transform_and_cut(cov3d, T);
     const auto filter_kernel = stroke::Cov2<scalar_t>(filter_kernel_size);
-    screen_space_gaussian.cov = affine_transform_and_cut(cov3D, T);
-    if (use_physical_density) {
+    switch (formulation) {
+    case Formulation::Opacity:
+    {
+        scalar_t aa_weight_factor = 1;
+        cuda::std::tie(screen_space_gaussian.cov, aa_weight_factor) = math::convolve_unnormalised_with_normalised(screen_space_gaussian.cov, filter_kernel);
+        screen_space_gaussian.weight = weight * aa_weight_factor;
+        break;
+    }
+    case Formulation::Mass:
+    {
         screen_space_gaussian.cov += filter_kernel;
         const auto J = make_jakobian(t, l_prime);
         const auto detJ = det(J);
         const auto detS = camera.focal_x * camera.focal_y;
-        const auto norm_factor = stroke::gaussian::norm_factor(screen_space_gaussian.cov);
-        screen_space_gaussian.weight = weight * detS * detJ * norm_factor;
-    } else {
-        scalar_t aa_weight_factor = 1;
-        cuda::std::tie(screen_space_gaussian.cov, aa_weight_factor) = math::convolve_unnormalised_with_normalised(screen_space_gaussian.cov, filter_kernel);
-        screen_space_gaussian.weight = weight * aa_weight_factor;
+        const auto norm_2d_factor = stroke::gaussian::norm_factor(screen_space_gaussian.cov);
+        screen_space_gaussian.weight = weight * detS * detJ * norm_2d_factor;
+        break;
+    }
+    case Formulation::Density:
+    {
+        screen_space_gaussian.cov += filter_kernel;
+        const auto J = make_jakobian(t, l_prime);
+        const auto detJ = det(J);
+        const auto detS = camera.focal_x * camera.focal_y;
+        const auto i3 = math::integrate_exponential(cov3d_scale);
+        const auto i2 = stroke::gaussian::integrate_exponential(screen_space_gaussian.cov);
+        screen_space_gaussian.weight = weight * detS * detJ * i3 / i2;
+        break;
+    }
+    case Formulation::Ots:
+    {
+        screen_space_gaussian.cov += filter_kernel;
+        const auto J = make_jakobian(t, l_prime);
+        const auto detJ = det(J);
+        const auto detS = camera.focal_x * camera.focal_y;
+
+        const auto i2prime = math::integrate_exponential(larger2(cov3d_scale));
+        const auto i2 = stroke::gaussian::integrate_exponential(screen_space_gaussian.cov);
+        screen_space_gaussian.weight = weight * detS * detJ * i2prime / i2;
+        break;
+    }
     }
 
     return screen_space_gaussian;
 }
 
-template <bool orientation_dependent_density, typename scalar_t>
-STROKE_DEVICES_INLINE Gaussian2dAndValueCache<scalar_t> splat_with_cache(scalar_t weight, const glm::vec<3, scalar_t>& centroid, const stroke::Cov3<scalar_t>& cov3D, const Camera<scalar_t>& camera, scalar_t filter_kernel_size)
+template <Formulation formulation, typename scalar_t>
+STROKE_DEVICES_INLINE Gaussian2dAndValueCache<scalar_t> splat_with_cache(scalar_t weight, const glm::vec<3, scalar_t>& centroid, const glm::vec3& cov3d_scale, const glm::quat& cov3d_rot, const Camera<scalar_t>& camera, scalar_t filter_kernel_size)
 {
-    using vec3_t = glm::vec<3, scalar_t>;
-    using vec4_t = glm::vec<4, scalar_t>;
-    using mat3_t = glm::mat<3, 3, scalar_t>;
-    const auto clamp_to_fov = [&](const vec3_t& t) {
-        const auto lim_x = scalar_t(1.3) * camera.tan_fovx * t.z;
-        const auto lim_y = scalar_t(1.3) * camera.tan_fovy * t.z;
-        return vec3_t { stroke::clamp(t.x, -lim_x, lim_x), stroke::clamp(t.y, -lim_y, lim_y), t.z };
-    };
+    // using vec3_t = glm::vec<3, scalar_t>;
+    // using vec4_t = glm::vec<4, scalar_t>;
+    // using mat3_t = glm::mat<3, 3, scalar_t>;
+    // const auto clamp_to_fov = [&](const vec3_t& t) {
+    //     const auto lim_x = scalar_t(1.3) * camera.tan_fovx * t.z;
+    //     const auto lim_y = scalar_t(1.3) * camera.tan_fovy * t.z;
+    //     return vec3_t { stroke::clamp(t.x, -lim_x, lim_x), stroke::clamp(t.y, -lim_y, lim_y), t.z };
+    // };
 
-    const vec3_t unclamped_t = vec3_t(camera.view_matrix * vec4_t(centroid, scalar_t(1.)));
-    const auto t = clamp_to_fov(unclamped_t); // clamps the size of the jakobian
+    // const vec3_t unclamped_t = vec3_t(camera.view_matrix * vec4_t(centroid, scalar_t(1.)));
+    // const auto t = clamp_to_fov(unclamped_t); // clamps the size of the jakobian
 
-    // following zwicker et al. "EWA Splatting"
+    // // following zwicker et al. "EWA Splatting"
 
-    const auto l_prime = glm::length(t);
-    // clang-format off
-    //    const auto S = mat3_t(
-    //        mat3_col_t(                       camera.focal_x,                                     0,                                  0),
-    //        mat3_col_t(                                    0,                        camera.focal_y,                                  0),
-    //        mat3_col_t(                                    0,                                     0,                                  1));
-    // clang-format on
-    // const auto J = make_jakobian(t, l_prime);
-    // Avoid matrix multiplication S * J:
-    const auto SJ = make_jakobian(t, l_prime, camera.focal_x, camera.focal_y);
+    // const auto l_prime = glm::length(t);
+    // // clang-format off
+    // //    const auto S = mat3_t(
+    // //        mat3_col_t(                       camera.focal_x,                                     0,                                  0),
+    // //        mat3_col_t(                                    0,                        camera.focal_y,                                  0),
+    // //        mat3_col_t(                                    0,                                     0,                                  1));
+    // // clang-format on
+    // // const auto J = make_jakobian(t, l_prime);
+    // // Avoid matrix multiplication S * J:
+    // const auto SJ = make_jakobian(t, l_prime, camera.focal_x, camera.focal_y);
 
-    const mat3_t W = mat3_t(camera.view_matrix);
-    mat3_t T = SJ * W;
+    // const mat3_t W = mat3_t(camera.view_matrix);
+    // mat3_t T = SJ * W;
 
-    const auto projected_centroid = project(centroid, camera.view_projection_matrix);
-    dgmr::math::Gaussian2d<scalar_t> screen_space_gaussian;
-    screen_space_gaussian.centroid = ndc2screen(projected_centroid, camera.fb_width, camera.fb_height);
+    // const auto projected_centroid = project(centroid, camera.view_projection_matrix);
+    // dgmr::math::Gaussian2d<scalar_t> screen_space_gaussian;
+    // screen_space_gaussian.centroid = ndc2screen(projected_centroid, camera.fb_width, camera.fb_height);
 
-    const auto filter_kernel = stroke::Cov2<scalar_t>(filter_kernel_size);
-    screen_space_gaussian.cov = affine_transform_and_cut(cov3D, T);
-    if (orientation_dependent_density) {
-        screen_space_gaussian.cov += filter_kernel;
-        const auto J = make_jakobian(t, l_prime);
-        const auto detJ = det(J);
-        const auto detS = camera.focal_x * camera.focal_y;
-        const auto norm_factor = stroke::gaussian::norm_factor(screen_space_gaussian.cov);
-        screen_space_gaussian.weight = weight * detS * detJ * norm_factor;
-    } else {
-        scalar_t aa_weight_factor = 1;
-        cuda::std::tie(screen_space_gaussian.cov, aa_weight_factor) = math::convolve_unnormalised_with_normalised(screen_space_gaussian.cov, filter_kernel);
-        screen_space_gaussian.weight = weight * aa_weight_factor;
-    }
+    // const auto cov3d = math::compute_cov(cov3d_scale, cov3d_rot);
+    // const auto filter_kernel = stroke::Cov2<scalar_t>(filter_kernel_size);
+    // screen_space_gaussian.cov = affine_transform_and_cut(cov3d, T);
+    // if (orientation_dependent_density) {
+    //     screen_space_gaussian.cov += filter_kernel;
+    //     const auto J = make_jakobian(t, l_prime);
+    //     const auto detJ = det(J);
+    //     const auto detS = camera.focal_x * camera.focal_y;
+    //     const auto norm_factor = stroke::gaussian::norm_factor(screen_space_gaussian.cov);
+    //     screen_space_gaussian.weight = weight * detS * detJ * norm_factor;
+    // } else {
+    //     scalar_t aa_weight_factor = 1;
+    //     cuda::std::tie(screen_space_gaussian.cov, aa_weight_factor) = math::convolve_unnormalised_with_normalised(screen_space_gaussian.cov, filter_kernel);
+    //     screen_space_gaussian.weight = weight * aa_weight_factor;
+    // }
 
-    return { screen_space_gaussian, T, unclamped_t };
+    // return { screen_space_gaussian, T, unclamped_t };
 }
 } // namespace dgmr::math

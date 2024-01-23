@@ -31,7 +31,7 @@ namespace {
 using namespace dgmr::unittest;
 using namespace dgmr::math;
 
-template <bool orientation_dependent_gaussian_density>
+template <dgmr::Formulation formulation>
 void check_splat(double filter_kernel_size)
 {
     using scalar_t = double;
@@ -45,9 +45,10 @@ void check_splat(double filter_kernel_size)
 
         const auto weight = rnd.uniform();
         const auto position = rnd.normal3();
-        const auto cov = host_random_cov<3, scalar_t>(&rnd);
-        Gaussian2d<scalar_t> g = splat<orientation_dependent_gaussian_density, scalar_t>(weight, position, cov, cam, scalar_t(filter_kernel_size));
-        Gaussian2dAndValueCache<scalar_t> gc = splat_with_cache<orientation_dependent_gaussian_density, scalar_t>(weight, position, cov, cam, scalar_t(filter_kernel_size));
+        const auto scales = rnd.uniform3();
+        const auto rot = host_random_rot<scalar_t>(&rnd);
+        Gaussian2d<scalar_t> g = splat<formulation, scalar_t>(weight, position, scales, rot, cam, scalar_t(filter_kernel_size));
+        Gaussian2dAndValueCache<scalar_t> gc = splat_with_cache<formulation, scalar_t>(weight, position, scales, rot, cam, scalar_t(filter_kernel_size));
         CHECK(g.weight == gc.gaussian.weight);
         CHECK(g.centroid == gc.gaussian.centroid);
         CHECK(g.cov == gc.gaussian.cov);
@@ -56,21 +57,37 @@ void check_splat(double filter_kernel_size)
 
 } // namespace
 
-TEST_CASE("dgmr utils: splat vs splat_with_cache (with orientation dependence, filter kernel size 0)")
+TEST_CASE("dgmr utils: splat vs splat_with_cache (with opacity, filter kernel size 0)")
 {
-    check_splat<true>(0);
+    check_splat<dgmr::Formulation::Opacity>(0);
 }
-TEST_CASE("dgmr utils: splat vs splat_with_cache (with orientation dependence, filter kernel size 0.3)")
+TEST_CASE("dgmr utils: splat vs splat_with_cache (with opacity, filter kernel size 0.3)")
 {
-    check_splat<true>(0.3);
+    check_splat<dgmr::Formulation::Opacity>(0.3);
 }
-TEST_CASE("dgmr utils: splat vs splat_with_cache (withOUT orientation dependence, filter kernel size 0)")
+TEST_CASE("dgmr utils: splat vs splat_with_cache (with mass, filter kernel size 0)")
 {
-    check_splat<false>(0);
+    check_splat<dgmr::Formulation::Mass>(0);
 }
-TEST_CASE("dgmr utils: splat vs splat_with_cache (withOUT orientation dependence, filter kernel size 0.3)")
+TEST_CASE("dgmr utils: splat vs splat_with_cache (with mass, filter kernel size 0.3)")
 {
-    check_splat<false>(0.3);
+    check_splat<dgmr::Formulation::Mass>(0.3);
+}
+TEST_CASE("dgmr utils: splat vs splat_with_cache (with density, filter kernel size 0)")
+{
+    check_splat<dgmr::Formulation::Density>(0);
+}
+TEST_CASE("dgmr utils: splat vs splat_with_cache (with density, filter kernel size 0.3)")
+{
+    check_splat<dgmr::Formulation::Density>(0.3);
+}
+TEST_CASE("dgmr utils: splat vs splat_with_cache (with Ots, filter kernel size 0)")
+{
+    check_splat<dgmr::Formulation::Ots>(0);
+}
+TEST_CASE("dgmr utils: splat vs splat_with_cache (with Ots, filter kernel size 0.3)")
+{
+    check_splat<dgmr::Formulation::Ots>(0.3);
 }
 
 TEST_CASE("dgmr utils: rotation matrix for rotating z into given direction")
@@ -136,6 +153,16 @@ TEST_CASE("dgmr utils: gaussian_bounds")
     }
 }
 
-TEST_CASE("dgmr utils: splat gives the same results as splat_cached")
-{
+TEST_CASE("dgmr utils: larger 2") {
+    const auto check = [](glm::ivec2 v) {
+        return v == glm::ivec2(2, 3) || v == glm::ivec2(3, 2);
+    };
+
+    CHECK(check(dgmr::math::larger2(glm::ivec3(1, 2, 3))));
+    CHECK(check(dgmr::math::larger2(glm::ivec3(1, 3, 2))));
+    CHECK(check(dgmr::math::larger2(glm::ivec3(2, 3, 1))));
+    CHECK(check(dgmr::math::larger2(glm::ivec3(2, 1, 3))));
+    CHECK(check(dgmr::math::larger2(glm::ivec3(3, 2, 1))));
+    CHECK(check(dgmr::math::larger2(glm::ivec3(3, 1, 2))));
+
 }

@@ -45,6 +45,13 @@ stroke::Cov<n_dims, scalar_t> host_random_cov(Generator* rnd)
 }
 
 template <typename scalar_t, typename Generator>
+glm::qua<scalar_t> host_random_rot(Generator* rnd)
+{
+    return glm::quat(rnd->uniform3() * (scalar_t(2) * glm::pi<scalar_t>()) );
+}
+
+
+template <typename scalar_t, typename Generator>
 dgmr::math::Camera<scalar_t> random_camera(Generator* rnd)
 {
     const scalar_t fovy = scalar_t(3.14 / 4);

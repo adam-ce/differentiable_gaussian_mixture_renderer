@@ -39,8 +39,9 @@ add_library(differentiable_gaussian_mixture_renderer
 	dgmr/constants.h
     dgmr/math.h    dgmr/grad/math.h
     dgmr/raster_bin_sizers.h
+    dgmr/types.h
 )
-target_compile_definitions(differentiable_gaussian_mixture_renderer INTERFACE GLM_FORCE_LEFT_HANDED)
+target_compile_definitions(differentiable_gaussian_mixture_renderer PUBLIC GLM_FORCE_LEFT_HANDED  GLM_ENABLE_EXPERIMENTAL)
 target_link_libraries(differentiable_gaussian_mixture_renderer PUBLIC stroke whack PRIVATE torch)
 target_include_directories(differentiable_gaussian_mixture_renderer INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_options(differentiable_gaussian_mixture_renderer PUBLIC $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>)
