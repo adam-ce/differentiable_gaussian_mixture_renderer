@@ -202,7 +202,13 @@ STROKE_DEVICES_INLINE stroke::geometry::Aabb1f gaussian_to_point_distance_bounds
 }
 
 template <Formulation formulation, typename scalar_t>
-STROKE_DEVICES_INLINE Gaussian2d<scalar_t> splat(scalar_t weight, const glm::vec<3, scalar_t>& centroid, const glm::vec<3, scalar_t>& cov3d_scale, const glm::qua<scalar_t>& cov3d_rot, const Camera<scalar_t>& camera, scalar_t filter_kernel_size)
+STROKE_DEVICES_INLINE Gaussian2d<scalar_t> splat(
+    scalar_t weight,
+    const glm::vec<3, scalar_t>& centroid,
+    const glm::vec<3, scalar_t>& cov3d_scale,
+    const glm::qua<scalar_t>& cov3d_rot,
+    const Camera<scalar_t>& camera,
+    scalar_t filter_kernel_size)
 {
     using vec3_t = glm::vec<3, scalar_t>;
     using vec4_t = glm::vec<4, scalar_t>;
@@ -218,13 +224,13 @@ STROKE_DEVICES_INLINE Gaussian2d<scalar_t> splat(scalar_t weight, const glm::vec
     // following zwicker et al. "EWA Splatting"
 
     const auto l_prime = glm::length(t);
-    // clang-format off
-    //    const auto S = mat3_t(
-    //        mat3_col_t(                       camera.focal_x,                                     0,                                  0),
-    //        mat3_col_t(                                    0,                        camera.focal_y,                                  0),
-    //        mat3_col_t(                                    0,                                     0,                                  1));
-    // clang-format on
+    // // clang-format off
+    //    const auto S = mat3_t(camera.focal_x,                                     0,                                  0,
+    //                                       0,                        camera.focal_y,                                  0,
+    //                                       0,                                     0,                                  1);
+    // // clang-format on
     // const auto J = make_jakobian(t, l_prime);
+    // const auto SJ = S * J;
     // Avoid matrix multiplication S * J:
     const auto SJ = make_jakobian(t, l_prime, camera.focal_x, camera.focal_y);
 
@@ -239,44 +245,36 @@ STROKE_DEVICES_INLINE Gaussian2d<scalar_t> splat(scalar_t weight, const glm::vec
     screen_space_gaussian.cov = affine_transform_and_cut(cov3d, T);
     const auto filter_kernel = stroke::Cov2<scalar_t>(filter_kernel_size);
     switch (formulation) {
-    case Formulation::Opacity:
-    {
+    case Formulation::Opacity: {
         scalar_t aa_weight_factor = 1;
         cuda::std::tie(screen_space_gaussian.cov, aa_weight_factor) = math::convolve_unnormalised_with_normalised(screen_space_gaussian.cov, filter_kernel);
         screen_space_gaussian.weight = weight * aa_weight_factor;
         break;
     }
-    case Formulation::Mass:
-    {
+    case Formulation::Mass: {
         screen_space_gaussian.cov += filter_kernel;
-        const auto J = make_jakobian(t, l_prime);
-        const auto detJ = det(J);
-        const auto detS = camera.focal_x * camera.focal_y;
+        const auto detSJ = det(SJ); // det(SJ) == det(S) * det(J)
+
         const auto norm_2d_factor = stroke::gaussian::norm_factor(screen_space_gaussian.cov);
-        screen_space_gaussian.weight = weight * detS * detJ * norm_2d_factor;
+        screen_space_gaussian.weight = weight * detSJ * norm_2d_factor;
         break;
     }
-    case Formulation::Density:
-    {
+    case Formulation::Density: {
         screen_space_gaussian.cov += filter_kernel;
-        const auto J = make_jakobian(t, l_prime);
-        const auto detJ = det(J);
-        const auto detS = camera.focal_x * camera.focal_y;
+        const auto detSJ = det(SJ); // det(SJ) == det(S) * det(J)
+
         const auto i3 = math::integrate_exponential(cov3d_scale);
         const auto i2 = stroke::gaussian::integrate_exponential(screen_space_gaussian.cov);
-        screen_space_gaussian.weight = weight * detS * detJ * i3 / i2;
+        screen_space_gaussian.weight = weight * detSJ * i3 / i2;
         break;
     }
-    case Formulation::Ots:
-    {
+    case Formulation::Ots: {
         screen_space_gaussian.cov += filter_kernel;
-        const auto J = make_jakobian(t, l_prime);
-        const auto detJ = det(J);
-        const auto detS = camera.focal_x * camera.focal_y;
+        const auto detSJ = det(SJ); // det(SJ) == det(S) * det(J)
 
         const auto i2prime = math::integrate_exponential(larger2(cov3d_scale));
         const auto i2 = stroke::gaussian::integrate_exponential(screen_space_gaussian.cov);
-        screen_space_gaussian.weight = weight * detS * detJ * i2prime / i2;
+        screen_space_gaussian.weight = weight * detSJ * i2prime / i2;
         break;
     }
     }

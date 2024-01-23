@@ -20,6 +20,7 @@
 
 #include <stroke/grad/gaussian.h>
 #include <stroke/grad/linalg.h>
+#include <stroke/grad/quaternions.h>
 #include <stroke/grad/scalar_functions.h>
 #include <stroke/grad/util.h>
 #include <stroke/linalg.h>
@@ -133,13 +134,61 @@ make_jakobian(const glm::vec<3, scalar_t>& t, scalar_t l_prime, const glm::mat<3
     return { grad_t, grad_l_prime };
 }
 
-template <bool orientation_dependent_density, typename scalar_t>
-STROKE_DEVICES_INLINE stroke::grad::ThreeGrads<scalar_t, glm::vec<3, scalar_t>, stroke::Cov3<scalar_t>>
-splat(scalar_t weight, const glm::vec<3, scalar_t>& centroid, const stroke::Cov3<scalar_t>& cov3D, const Gaussian2d<scalar_t>& incoming_grad, const Camera<scalar_t>& camera, scalar_t filter_kernel_size)
+template <typename scalar_t>
+STROKE_DEVICES_INLINE stroke::grad::TwoGrads<glm::vec<3, scalar_t>, glm::qua<scalar_t>>
+compute_cov(const glm::vec<3, scalar_t>& scale, const glm::qua<scalar_t>& rotation, const stroke::Cov<3, scalar_t> incoming_grad)
+{
+    using vec_t = glm::vec<3, scalar_t>;
+    using mat_t = glm::mat<3, 3, scalar_t>;
+
+    const mat_t R = glm::toMat3(rotation);
+    const mat_t S = mat_t(scale.x, 0, 0, 0, scale.y, 0, 0, 0, scale.z);
+    const mat_t RS = R * S;
+    const mat_t RS_T = transpose(RS);
+
+    auto [grad_RS, grad_RS_T] = stroke::grad::matmul(RS, RS_T, stroke::grad::to_mat_gradient(incoming_grad));
+    grad_RS += transpose(grad_RS_T);
+    const auto [grad_R, grad_S] = stroke::grad::matmul(R, S, grad_RS);
+
+    const auto grad_rotation = stroke::grad::toMat3(rotation, grad_R);
+    const auto grad_scale = vec_t { grad_S[0][0], grad_S[1][1], grad_S[2][2] };
+
+    return { grad_scale, grad_rotation };
+}
+
+template <typename scalar_t>
+STROKE_DEVICES_INLINE glm::vec<2, scalar_t> integrate_exponential(const glm::vec<2, scalar_t>& scales, scalar_t grad)
+{
+    constexpr auto factor = scalar_t(gcem::sqrt(gcem::pow(2 * glm::pi<double>(), double(2))));
+    // return factor * scales.x * scales.y * scales.z;
+    const auto gf = grad * factor;
+    return { gf * scales.y, gf * scales.x };
+}
+
+template <typename scalar_t>
+STROKE_DEVICES_INLINE glm::vec<3, scalar_t> integrate_exponential(const glm::vec<3, scalar_t>& scales, scalar_t grad)
+{
+    constexpr auto factor = scalar_t(gcem::sqrt(gcem::pow(2 * glm::pi<double>(), double(3))));
+    // return factor * scales.x * scales.y * scales.z;
+    const auto gf = grad * factor;
+    return { gf * scales.y * scales.z, gf * scales.x * scales.z, gf * scales.x * scales.y };
+}
+
+template <dgmr::Formulation formulation, typename scalar_t>
+STROKE_DEVICES_INLINE stroke::grad::FourGrads<scalar_t, glm::vec<3, scalar_t>, glm::vec<3, scalar_t>, glm::qua<scalar_t>> splat(
+    scalar_t weight,
+    const glm::vec<3, scalar_t>& centroid,
+    const glm::vec<3, scalar_t>& cov3d_scale,
+    const glm::qua<scalar_t>& cov3d_rotation,
+    const Gaussian2d<scalar_t>& incoming_grad,
+    const Camera<scalar_t>& camera,
+    scalar_t filter_kernel_size)
 {
     using vec3_t = glm::vec<3, scalar_t>;
     using vec4_t = glm::vec<4, scalar_t>;
     using mat3_t = glm::mat<3, 3, scalar_t>;
+    using quat_t = glm::qua<scalar_t>;
+
     const auto clamp_to_fov = [&](const vec3_t& t) {
         const auto lim_x = 1.3f * camera.tan_fovx * t.z;
         const auto lim_y = 1.3f * camera.tan_fovy * t.z;
@@ -155,50 +204,93 @@ splat(scalar_t weight, const glm::vec<3, scalar_t>& centroid, const stroke::Cov3
     const vec3_t t = clamp_to_fov(unclamped_t); // clamps the size of the jakobian
 
     const scalar_t l_prime = glm::length(t);
-    const auto J = dgmr::math::make_jakobian(t, l_prime);
     const auto SJ = dgmr::math::make_jakobian(t, l_prime, camera.focal_x, camera.focal_y);
 
     const mat3_t W = mat3_t(camera.view_matrix);
     const mat3_t T = SJ * W;
 
-    const auto unfiltered_screenspace_cov = dgmr::math::affine_transform_and_cut(cov3D, T);
+    const auto cov3d = math::compute_cov(cov3d_scale, cov3d_rotation);
+    const auto unfiltered_screenspace_cov = dgmr::math::affine_transform_and_cut(cov3d, T);
     const auto projected_centroid = dgmr::math::project(centroid, camera.view_projection_matrix);
-    const auto det_J = det(J);
-    assert(det_J > 0);
 
     // ================================== compute grad, above is computing forward values that could be cached.
-    auto incoming_cov_grad = incoming_grad.cov;
-    auto grad_weight = incoming_grad.weight;
-    auto grad_t = vec3_t(0);
-    auto grad_l_prime = scalar_t(0);
+    stroke::Cov2<scalar_t> grad_cov2d = {};
+    scalar_t grad_weight3d = {};
+    mat3_t grad_SJ = {};
+    vec3_t grad_cov3d_scale = {};
 
     const auto filter_kernel = stroke::Cov2<scalar_t>(filter_kernel_size);
-    if (orientation_dependent_density) {
-        const auto norm_factor = stroke::gaussian::norm_factor(unfiltered_screenspace_cov + filter_kernel);
-        //    screen_space_gaussian.weight = weight * camera.focal_x * camera.focal_y * det(J) * norm_factor; // det(S) == camera.focal_x * camera.focal_y
-        grad_weight *= camera.focal_x * camera.focal_y * det_J * norm_factor;
-        const auto grad_det_J = incoming_grad.weight * weight * camera.focal_x * camera.focal_y * norm_factor;
 
-        //    const auto det_J = det(J);
-        const auto grad_J = stroke::grad::det(J, grad_det_J);
+    switch (formulation) {
+    case Formulation::Opacity: {
+        // scalar_t aa_weight_factor = 1;
+        // cuda::std::tie(screen_space_gaussian.cov, aa_weight_factor) = math::convolve_unnormalised_with_normalised(screen_space_gaussian.cov, filter_kernel);
+        // screen_space_gaussian.weight = weight * aa_weight_factor;
 
-        //    const auto J = dgmr::utils::make_jakobian(t, l_prime);
-        grad::make_jakobian<scalar_t>(t, l_prime, grad_J, 1, 1).addTo(&grad_t, &grad_l_prime);
-
-        const auto grad_norm_factor = incoming_grad.weight * weight * camera.focal_x * camera.focal_y * det_J;
-        incoming_cov_grad += stroke::grad::gaussian::norm_factor(unfiltered_screenspace_cov + filter_kernel, grad_norm_factor);
-
-    } else {
-        // screen_space_gaussian.weight *= aa_weight_factor;
         const auto aa_weight_factor = cuda::std::get<1>(math::convolve_unnormalised_with_normalised(unfiltered_screenspace_cov, filter_kernel));
-        grad_weight *= aa_weight_factor;
+        grad_weight3d = incoming_grad.weight * aa_weight_factor;
         const auto grad_aa_weight_factor = incoming_grad.weight * weight;
 
-        incoming_cov_grad = grad::convolve_unnormalised_with_normalised<2, scalar_t>(unfiltered_screenspace_cov, filter_kernel, incoming_cov_grad, grad_aa_weight_factor);
+        grad_cov2d = grad::convolve_unnormalised_with_normalised<2, scalar_t>(unfiltered_screenspace_cov, filter_kernel, incoming_grad.cov, grad_aa_weight_factor);
+        break;
+    }
+    case Formulation::Mass: {
+        // screen_space_gaussian.cov += filter_kernel;
+        const auto detSJ = det(SJ); // det(SJ) == det(S) * det(J)
+
+        const auto norm_2d_factor = stroke::gaussian::norm_factor(unfiltered_screenspace_cov + filter_kernel);
+        // screen_space_gaussian.weight = weight * detSJ * norm_2d_factor;
+        grad_weight3d = incoming_grad.weight * detSJ * norm_2d_factor;
+        const auto grad_detSJ = incoming_grad.weight * weight * norm_2d_factor;
+        const auto grad_norm_2d_factor = incoming_grad.weight * weight * detSJ;
+
+        grad_cov2d = incoming_grad.cov;
+        grad_cov2d += stroke::grad::gaussian::norm_factor(unfiltered_screenspace_cov + filter_kernel, grad_norm_2d_factor);
+
+        grad_SJ = stroke::grad::det(SJ, grad_detSJ);
+
+        break;
+    }
+    case Formulation::Density: {
+        // screen_space_gaussian.cov += filter_kernel;
+        // const auto detSJ = det(SJ); // det(SJ) == det(S) * det(J)
+
+        // const auto i3 = math::integrate_exponential(cov3d_scale);
+        // const auto i2 = stroke::gaussian::integrate_exponential(screen_space_gaussian.cov);
+        // screen_space_gaussian.weight = weight * detSJ * i3 / i2;
+
+        const auto detSJ = det(SJ); // det(SJ) == det(S) * det(J)
+
+        const auto i3 = math::integrate_exponential(cov3d_scale);
+        const auto i2 = stroke::gaussian::integrate_exponential(unfiltered_screenspace_cov + filter_kernel);
+
+        // screen_space_gaussian.weight = weight * detSJ * i3 / i2;
+        grad_weight3d = incoming_grad.weight * detSJ * i3 / i2;
+        const auto grad_detSJ = incoming_grad.weight * weight * i3 / i2;
+        const auto [grad_i3, grad_i2] = stroke::grad::divide_a_by_b(i3, i2, incoming_grad.weight * weight * detSJ);
+
+        grad_cov2d = incoming_grad.cov;
+        grad_cov2d += stroke::grad::gaussian::integrate_exponential(unfiltered_screenspace_cov + filter_kernel, grad_i2);
+
+        grad_cov3d_scale = grad::integrate_exponential(cov3d_scale, grad_i3);
+
+        grad_SJ = stroke::grad::det(SJ, grad_detSJ);
+
+        break;
+    }
+    case Formulation::Ots: {
+        // screen_space_gaussian.cov += filter_kernel;
+        // const auto detSJ = det(SJ); // det(SJ) == det(S) * det(J)
+
+        // const auto i2prime = math::integrate_exponential(larger2(cov3d_scale));
+        // const auto i2 = stroke::gaussian::integrate_exponential(screen_space_gaussian.cov);
+        // screen_space_gaussian.weight = weight * detSJ * i2prime / i2;
+        break;
+    }
     }
 
     //    screen_space_gaussian.cov = affine_transform_and_cut(cov3D, T);
-    const auto [grad_cov3d, grad_T] = grad::affine_transform_and_cut(cov3D, T, incoming_cov_grad);
+    const auto [grad_cov3d, grad_T] = grad::affine_transform_and_cut(cov3d, T, grad_cov2d);
 
     //    screen_space_gaussian.centroid = ndc2screen(projected_centroid, camera.fb_width, camera.fb_height);
     const auto grad_projected_centroid = grad::ndc2screen(projected_centroid, camera.fb_width, camera.fb_height, incoming_grad.centroid);
@@ -207,10 +299,11 @@ splat(scalar_t weight, const glm::vec<3, scalar_t>& centroid, const stroke::Cov3
     auto grad_centroid = grad::project(centroid, camera.view_projection_matrix, grad_projected_centroid);
 
     //    mat3_t T = SJ * W;
-    const auto [grad_SJ, grad_W] = stroke::grad::matmul(SJ, W, grad_T);
+    mat3_t grad_W = {};
+    stroke::grad::matmul(SJ, W, grad_T).addTo(&grad_SJ, &grad_W);
 
     //    const auto SJ = dgmr::utils::make_jakobian(t, l_prime, camera.focal_x, camera.focal_y);
-    grad::make_jakobian(t, l_prime, grad_SJ, camera.focal_x, camera.focal_y).addTo(&grad_t, &grad_l_prime);
+    auto [grad_t, grad_l_prime] = grad::make_jakobian(t, l_prime, grad_SJ, camera.focal_x, camera.focal_y);
 
     //    const scalar_t l_prime = glm::length(t);
     grad_t += stroke::grad::length(t, grad_l_prime);
@@ -221,8 +314,11 @@ splat(scalar_t weight, const glm::vec<3, scalar_t>& centroid, const stroke::Cov3
     //    const vec3_t unclamped_t = vec3_t(camera.view_matrix * vec4_t(centroid, scalar_t(1.)));
     grad_centroid += vec3_t(transpose(camera.view_matrix) * vec4_t(grad_unclamped_t, scalar_t(0.)));
 
+    quat_t grad_cov3d_rotation = {};
+    grad::compute_cov(cov3d_scale, cov3d_rotation, grad_cov3d).addTo(&grad_cov3d_scale, &grad_cov3d_rotation);
+
     // return screen_space_gaussian;
-    return { grad_weight, grad_centroid, grad_cov3d };
+    return { grad_weight3d, grad_centroid, grad_cov3d_scale, grad_cov3d_rotation };
 }
 
 template <bool orientation_dependent_density, typename scalar_t>
@@ -315,23 +411,5 @@ splat_with_cache(scalar_t weight, const glm::vec<3, scalar_t>& centroid, const s
 
     // return screen_space_gaussian;
     return { grad_weight, grad_centroid, grad_cov3d };
-}
-
-template<typename scalar_t>
-STROKE_DEVICES_INLINE glm::vec<2, scalar_t> integrate_exponential(const glm::vec<2, scalar_t> &scales, scalar_t grad)
-{
-    constexpr auto factor = scalar_t(gcem::sqrt(gcem::pow(2 * glm::pi<double>(), double(2))));
-    // return factor * scales.x * scales.y * scales.z;
-    const auto gf = grad * factor;
-    return {gf * scales.y, gf * scales.x};
-}
-
-template <typename scalar_t>
-STROKE_DEVICES_INLINE glm::vec<3, scalar_t> integrate_exponential(const glm::vec<3, scalar_t>& scales, scalar_t grad)
-{
-    constexpr auto factor = scalar_t(gcem::sqrt(gcem::pow(2 * glm::pi<double>(), double(3))));
-    // return factor * scales.x * scales.y * scales.z;
-    const auto gf = grad * factor;
-    return { gf * scales.y * scales.z, gf * scales.x * scales.z, gf * scales.x * scales.y };
 }
 } // namespace dgmr::math::grad

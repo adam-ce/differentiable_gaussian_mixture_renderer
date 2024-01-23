@@ -46,7 +46,7 @@ void check_splat(double filter_kernel_size)
         const auto weight = rnd.uniform();
         const auto position = rnd.normal3();
         const auto scales = rnd.uniform3();
-        const auto rot = host_random_rot<scalar_t>(&rnd);
+        const auto rot = stroke::host_random_quaternion<scalar_t>(&rnd);
         Gaussian2d<scalar_t> g = splat<formulation, scalar_t>(weight, position, scales, rot, cam, scalar_t(filter_kernel_size));
         Gaussian2dAndValueCache<scalar_t> gc = splat_with_cache<formulation, scalar_t>(weight, position, scales, rot, cam, scalar_t(filter_kernel_size));
         CHECK(g.weight == gc.gaussian.weight);
@@ -153,7 +153,8 @@ TEST_CASE("dgmr utils: gaussian_bounds")
     }
 }
 
-TEST_CASE("dgmr utils: larger 2") {
+TEST_CASE("dgmr utils: larger 2")
+{
     const auto check = [](glm::ivec2 v) {
         return v == glm::ivec2(2, 3) || v == glm::ivec2(3, 2);
     };
@@ -164,5 +165,4 @@ TEST_CASE("dgmr utils: larger 2") {
     CHECK(check(dgmr::math::larger2(glm::ivec3(2, 1, 3))));
     CHECK(check(dgmr::math::larger2(glm::ivec3(3, 2, 1))));
     CHECK(check(dgmr::math::larger2(glm::ivec3(3, 1, 2))));
-
 }
