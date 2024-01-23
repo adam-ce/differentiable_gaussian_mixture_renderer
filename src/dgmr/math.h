@@ -132,9 +132,9 @@ STROKE_DEVICES_INLINE glm::mat<3, 3, scalar_t> make_jakobian(const glm::vec<3, s
     using mat3_col_t = typename mat3_t::col_type;
     // clang-format off
     return mat3_t(
-               mat3_col_t(                 focal_x / t.z,                                0,   (focal_x * t.x) / l_prime),
-               mat3_col_t(                             0,                    focal_y / t.z,   (focal_y * t.y) / l_prime),
-               mat3_col_t(-(focal_x * t.x) / (t.z * t.z),   -(focal_y * t.y) / (t.z * t.z),               t.z / l_prime));
+               mat3_col_t(       focal_x / t.z,                      0,   (focal_x * t.x) / l_prime),
+               mat3_col_t(                   0,          focal_y / t.z,   (focal_y * t.y) / l_prime),
+               mat3_col_t(-(t.x) / (t.z * t.z),   -(t.y) / (t.z * t.z),               t.z / l_prime));
     // clang-format on
 }
 
