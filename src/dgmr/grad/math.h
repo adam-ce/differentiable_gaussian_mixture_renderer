@@ -174,6 +174,20 @@ STROKE_DEVICES_INLINE glm::vec<3, scalar_t> integrate_exponential(const glm::vec
     return { gf * scales.y * scales.z, gf * scales.x * scales.z, gf * scales.x * scales.y };
 }
 
+template <typename scalar_t>
+STROKE_DEVICES_INLINE glm::vec<3, scalar_t> larger2(const glm::vec<3, scalar_t>& vec, glm::vec<2, scalar_t> grad)
+{
+    if (vec[0] < vec[1]) {
+        if (vec[0] < vec[2])
+            return glm::vec<3, scalar_t>(0, grad[0], grad[1]);
+    } else {
+        if (vec[1] < vec[2])
+            return glm::vec<3, scalar_t>(grad[0], 0, grad[1]);
+    }
+
+    return glm::vec<3, scalar_t>(grad[0], grad[1], 0);
+}
+
 template <dgmr::Formulation formulation, typename scalar_t>
 STROKE_DEVICES_INLINE stroke::grad::FourGrads<scalar_t, glm::vec<3, scalar_t>, glm::vec<3, scalar_t>, glm::qua<scalar_t>> splat(
     scalar_t weight,
@@ -285,6 +299,26 @@ STROKE_DEVICES_INLINE stroke::grad::FourGrads<scalar_t, glm::vec<3, scalar_t>, g
         // const auto i2prime = math::integrate_exponential(larger2(cov3d_scale));
         // const auto i2 = stroke::gaussian::integrate_exponential(screen_space_gaussian.cov);
         // screen_space_gaussian.weight = weight * detSJ * i2prime / i2;
+
+        const auto detSJ = det(SJ); // det(SJ) == det(S) * det(J)
+
+        const auto larger2scales = math::larger2(cov3d_scale);
+        const auto i2prime = math::integrate_exponential(larger2scales);
+        const auto i2 = stroke::gaussian::integrate_exponential(unfiltered_screenspace_cov + filter_kernel);
+
+        // screen_space_gaussian.weight = weight * detSJ * i2prime / i2;
+        grad_weight3d = incoming_grad.weight * detSJ * i2prime / i2;
+        const auto grad_detSJ = incoming_grad.weight * weight * i2prime / i2;
+        const auto [grad_i2prime, grad_i2] = stroke::grad::divide_a_by_b(i2prime, i2, incoming_grad.weight * weight * detSJ);
+
+        grad_cov2d = incoming_grad.cov;
+        grad_cov2d += stroke::grad::gaussian::integrate_exponential(unfiltered_screenspace_cov + filter_kernel, grad_i2);
+
+        const auto grad_larger2scales = grad::integrate_exponential(larger2scales, grad_i2prime);
+        grad_cov3d_scale = grad::larger2(cov3d_scale, grad_larger2scales);
+
+        grad_SJ = stroke::grad::det(SJ, grad_detSJ);
+
         break;
     }
     }
