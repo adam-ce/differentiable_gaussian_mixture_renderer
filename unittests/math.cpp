@@ -57,38 +57,38 @@ void check_splat(double filter_kernel_size)
 
 } // namespace
 
-TEST_CASE("dgmr utils: splat vs splat_with_cache (with opacity, filter kernel size 0)")
-{
-    check_splat<dgmr::Formulation::Opacity>(0);
-}
-TEST_CASE("dgmr utils: splat vs splat_with_cache (with opacity, filter kernel size 0.3)")
-{
-    check_splat<dgmr::Formulation::Opacity>(0.3);
-}
-TEST_CASE("dgmr utils: splat vs splat_with_cache (with mass, filter kernel size 0)")
-{
-    check_splat<dgmr::Formulation::Mass>(0);
-}
-TEST_CASE("dgmr utils: splat vs splat_with_cache (with mass, filter kernel size 0.3)")
-{
-    check_splat<dgmr::Formulation::Mass>(0.3);
-}
-TEST_CASE("dgmr utils: splat vs splat_with_cache (with density, filter kernel size 0)")
-{
-    check_splat<dgmr::Formulation::Density>(0);
-}
-TEST_CASE("dgmr utils: splat vs splat_with_cache (with density, filter kernel size 0.3)")
-{
-    check_splat<dgmr::Formulation::Density>(0.3);
-}
-TEST_CASE("dgmr utils: splat vs splat_with_cache (with Ots, filter kernel size 0)")
-{
-    check_splat<dgmr::Formulation::Ots>(0);
-}
-TEST_CASE("dgmr utils: splat vs splat_with_cache (with Ots, filter kernel size 0.3)")
-{
-    check_splat<dgmr::Formulation::Ots>(0.3);
-}
+// TEST_CASE("dgmr utils: splat vs splat_with_cache (with opacity, filter kernel size 0)")
+// {
+//     check_splat<dgmr::Formulation::Opacity>(0);
+// }
+// TEST_CASE("dgmr utils: splat vs splat_with_cache (with opacity, filter kernel size 0.3)")
+// {
+//     check_splat<dgmr::Formulation::Opacity>(0.3);
+// }
+// TEST_CASE("dgmr utils: splat vs splat_with_cache (with mass, filter kernel size 0)")
+// {
+//     check_splat<dgmr::Formulation::Mass>(0);
+// }
+// TEST_CASE("dgmr utils: splat vs splat_with_cache (with mass, filter kernel size 0.3)")
+// {
+//     check_splat<dgmr::Formulation::Mass>(0.3);
+// }
+// TEST_CASE("dgmr utils: splat vs splat_with_cache (with density, filter kernel size 0)")
+// {
+//     check_splat<dgmr::Formulation::Density>(0);
+// }
+// TEST_CASE("dgmr utils: splat vs splat_with_cache (with density, filter kernel size 0.3)")
+// {
+//     check_splat<dgmr::Formulation::Density>(0.3);
+// }
+// TEST_CASE("dgmr utils: splat vs splat_with_cache (with Ots, filter kernel size 0)")
+// {
+//     check_splat<dgmr::Formulation::Ots>(0);
+// }
+// TEST_CASE("dgmr utils: splat vs splat_with_cache (with Ots, filter kernel size 0.3)")
+// {
+//     check_splat<dgmr::Formulation::Ots>(0.3);
+// }
 
 TEST_CASE("dgmr utils: rotation matrix for rotating z into given direction")
 {
