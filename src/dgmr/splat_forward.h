@@ -61,7 +61,7 @@ struct SplatForwardData {
 
 namespace splat {
     struct config {
-        static constexpr Formulation gaussian_mixture_formulation = Formulation::Opacity;
+        static constexpr Formulation gaussian_mixture_formulation = Formulation::Ots;
     };
 } // namespace splat
 
