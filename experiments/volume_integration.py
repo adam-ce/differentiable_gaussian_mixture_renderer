@@ -27,6 +27,9 @@ c_g =       np.array([0.2, 0.5, 0.9, 0.4, 0.1, 0.4, 0.2, 0.8, 0.2, 0.8, 0.4, 0.3
 # weights =   np.array([1.5, 0.5, 0.5, ]).reshape(-1, 1)
 # c_g =       np.array([0.2, 0.9, 0.1, ]).reshape(-1, 1)
 
+def sq(a):
+    return a * a
+
 def g(xes: np.array) -> np.array:
     norm_factor = 1 / (SDs * math.sqrt(2 * math.pi))
     return weights * norm_factor * np.exp(-0.5 * (xes - centroids)*(xes - centroids) / (SDs * SDs))
@@ -93,7 +96,7 @@ def compute_bin_borders(n_bins: int) -> np.array:
 
     tb_centr = np.ones(n_bins) * np.infty
     tb_SD = np.zeros(n_bins)
-    tb_int = np.zeros(n_bins)
+    tb_mass = np.zeros(n_bins)
     tb_trans = np.zeros(n_bins)
     transmittance = 1
     last_bin_index = 0
@@ -106,33 +109,46 @@ def compute_bin_borders(n_bins: int) -> np.array:
         # add gaussian
         tb_centr[last_bin_index] = centroids[index]
         tb_SD[last_bin_index] = SDs[index]
-        tb_int[last_bin_index] = g_ints[index]
+        tb_mass[last_bin_index] = g_ints[index]
         integration_range_end = max(integration_range_end, centr_p_k_sig[index])
         ordered_indices = np.argsort(tb_centr)
         tb_centr = tb_centr[ordered_indices]
-        tb_int = tb_int[ordered_indices]
+        tb_mass = tb_mass[ordered_indices]
         last_bin_index = last_bin_index + 1
 
         def merge(a: int, b: int):
             assert a >= 0
             assert a < b
-            # percentage_a = tb_trans[a] * tb_int[a] / (tb_trans[a] * tb_int[a]  + tb_trans[b] * tb_int[b])
-            percentage_a = tb_int[a] / (tb_int[a]  + tb_int[b])
+            assert b < n_bins
+            percentage_a = tb_trans[a] * tb_mass[a] / (tb_trans[a] * tb_mass[a]  + tb_trans[b] * tb_mass[b])
+            # percentage_a = tb_mass[a] / (tb_mass[a]  + tb_mass[b])
             percentage_b =  1 - percentage_a
-            new_centr = percentage_a * tb_centr[a] + percentage_b * tb_centr[b]
-            new_int = tb_int[a] + tb_int[b]
-            var_a = tb_SD[a] * tb_SD[a]
-            var_b = tb_SD[b] * tb_SD[b]
+            if tb_centr[a] + tb_SD[a] * 1.5 > tb_centr[b] - tb_SD[b] * 1.5 or True:
+                new_centr = percentage_a * tb_centr[a] + percentage_b * tb_centr[b]
+            else:
+                new_centr = tb_centr[a if tb_trans[a] * tb_mass[a] > tb_trans[b] * tb_mass[b] else b]
+            new_int = tb_mass[a] + tb_mass[b]
+            var_a = sq(tb_SD[a])
+            var_b = sq(tb_SD[b])
             new_var = percentage_a * (var_a + (tb_centr[a] - new_centr) * (tb_centr[a] - new_centr)) + \
                       percentage_b * (var_b + (tb_centr[b] - new_centr) * (tb_centr[b] - new_centr))
-            tb_centr[a] = new_centr
-            tb_int[a] = new_int
-            tb_SD[a] = math.sqrt(new_var)
+            return new_centr, math.sqrt(new_var), new_int
 
-            for j in range(b, n_bins - 1):
-                tb_centr[j] = tb_centr[j + 1]
-                tb_int[j] = tb_int[j + 1]
-                tb_SD[j] = tb_SD[j + 1]
+
+        def cost(index: int):
+            assert index >= 0
+            assert index < n_bins
+            # return tb_trans[index] * min(tb_int[index], tb_int[index + 1]) * abs(tb_centr[index] - tb_centr[index + 1])
+
+            def kl_div(c1, sd1, c2, sd2):
+                return (sq(c1-c2) + sq(sd1) - sq(sd2)) / (2 * sq(sd2)) + math.log(sd2 / sd1)
+
+            c_m, sd_m, _ = merge(index, index + 1)
+            c1 = tb_centr[index]
+            c2 = tb_centr[index + 1]
+            sd1 = tb_SD[index]
+            sd2 = tb_SD[index + 1]
+            return tb_trans[index] * ( kl_div(c1, sd1, c_m, sd_m) +  kl_div(c2, sd2, c_m, sd_m))
 
         def closer_neighbour(index: int) -> int:
             if index == 0:
@@ -148,13 +164,13 @@ def compute_bin_borders(n_bins: int) -> np.array:
             transmittance = 1
             for j in range(n_bins):
                 tb_trans[j] = transmittance
-                transmittance = transmittance * np.exp(-tb_int[j])
+                transmittance = transmittance * np.exp(-tb_mass[j])
 
             # search for merge candidate
             best_idx = -1
             best_idx_val = np.infty
             for j in range(n_bins - 1):
-                val = tb_trans[j] * tb_int[j] * abs(tb_centr[closer_neighbour(j)] - tb_centr[j])
+                val = cost(j)
                 if (val < best_idx_val):
                     best_idx_val = val
                     best_idx = j
@@ -162,8 +178,16 @@ def compute_bin_borders(n_bins: int) -> np.array:
             assert(best_idx < n_bins - 1)
                 
             # merge
-            merge_index = min(closer_neighbour(best_idx), best_idx)
-            merge(merge_index, merge_index + 1)
+            new_centr, new_SD, new_int = merge(best_idx, best_idx + 1)
+
+            tb_centr[best_idx] = new_centr
+            tb_mass[best_idx] = new_int
+            tb_SD[best_idx] = new_SD
+
+            for j in range(best_idx + 1, n_bins - 1):
+                tb_centr[j] = tb_centr[j + 1]
+                tb_mass[j] = tb_mass[j + 1]
+                tb_SD[j] = tb_SD[j + 1]
             last_bin_index = n_bins - 1
             
     
@@ -173,7 +197,7 @@ def compute_bin_borders(n_bins: int) -> np.array:
     borders[inf_indices] = np.interp(np.flatnonzero(inf_indices), 
                                  np.flatnonzero(valid_indices), 
                                  borders[valid_indices])
-    return borders.reshape(1, -1), np.concatenate(([0.0], tb_int[:-1], [0]))
+    return borders.reshape(1, -1), np.concatenate(([0.0], tb_mass[:-1], [0]))
 
 # def compute_bin_borders(n_bins: int) -> np.array:
     # return np.arange(0, 15, 2, dtype=np.float64).reshape(1, -1) # equal spacing
@@ -303,7 +327,7 @@ plt.plot(xes.reshape(-1), gm(xes), label='gm', zorder=1) # color="tab:blue",
 # plt.plot(xes.reshape(-1), gm_int, label='gm integrated') # , color="tab:green"
 # plt.plot(xes.reshape(-1), integrate_gm_0_to(xes), label='integrate_gm_0_to')
 # plt.plot(xes.reshape(-1), np.exp(-1 * gm_int), label='transmittance')
-# plt.plot(xes.reshape(-1), gm_evals * np.exp(-1 * gm_int), label='transmittance * gm')
+plt.plot(xes.reshape(-1), gm_evals * np.exp(-1 * gm_int), label='transmittance * gm')
 # plt.plot(xes.reshape(-1), c(xes), label='c')
 # plt.plot(xes.reshape(-1), vol_val(xes), label='vol_val gm')
 plt.plot(xes.reshape(-1), vol_int(gm, c), label='vol_int gm')
