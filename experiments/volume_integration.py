@@ -92,6 +92,7 @@ def compute_bin_borders(n_bins: int) -> np.array:
     # g_ints = g(centroids.reshape(-1, 1)).reshape(-1)
 
     tb_centr = np.ones(n_bins) * np.infty
+    tb_SD = np.zeros(n_bins)
     tb_int = np.zeros(n_bins)
     tb_trans = np.zeros(n_bins)
     transmittance = 1
@@ -99,17 +100,39 @@ def compute_bin_borders(n_bins: int) -> np.array:
     integration_range_end = 0
 
     for index in range(len(centroids)):
-        if transmittance < transmission_threshold:
+        if transmittance <= transmission_threshold:
             break
 
-        # set end to largest extent
+        # add gaussian
         tb_centr[last_bin_index] = centroids[index]
+        tb_SD[last_bin_index] = SDs[index]
         tb_int[last_bin_index] = g_ints[index]
         integration_range_end = max(integration_range_end, centr_p_k_sig[index])
         ordered_indices = np.argsort(tb_centr)
         tb_centr = tb_centr[ordered_indices]
         tb_int = tb_int[ordered_indices]
         last_bin_index = last_bin_index + 1
+
+        def merge(a: int, b: int):
+            assert a >= 0
+            assert a < b
+            # percentage_a = tb_trans[a] * tb_int[a] / (tb_trans[a] * tb_int[a]  + tb_trans[b] * tb_int[b])
+            percentage_a = tb_int[a] / (tb_int[a]  + tb_int[b])
+            percentage_b =  1 - percentage_a
+            new_centr = percentage_a * tb_centr[a] + percentage_b * tb_centr[b]
+            new_int = tb_int[a] + tb_int[b]
+            var_a = tb_SD[a] * tb_SD[a]
+            var_b = tb_SD[b] * tb_SD[b]
+            new_var = percentage_a * (var_a + (tb_centr[a] - new_centr) * (tb_centr[a] - new_centr)) + \
+                      percentage_b * (var_b + (tb_centr[b] - new_centr) * (tb_centr[b] - new_centr))
+            tb_centr[a] = new_centr
+            tb_int[a] = new_int
+            tb_SD[a] = math.sqrt(new_var)
+
+            for j in range(b, n_bins - 1):
+                tb_centr[j] = tb_centr[j + 1]
+                tb_int[j] = tb_int[j + 1]
+                tb_SD[j] = tb_SD[j + 1]
 
         def closer_neighbour(index: int) -> int:
             if index == 0:
@@ -126,30 +149,6 @@ def compute_bin_borders(n_bins: int) -> np.array:
             for j in range(n_bins):
                 tb_trans[j] = transmittance
                 transmittance = transmittance * np.exp(-tb_int[j])
-            
-            # # search for merge candidate
-            # best_idx = -1
-            # best_idx_val = np.infty
-            # prev_pos = 0
-            # prev_int = np.infty
-            # prev_trans = 1.0
-            # for j in range(n_bins):
-            #     val = prev_trans * abs(tb_int[j] - prev_int) * (tb_centr[j] - prev_pos)
-            #     if (val < best_idx_val):
-            #         best_idx_val = val
-            #         best_idx = j
-            #     prev_pos = tb_centr[j]
-            #     prev_int = tb_int[j]
-            #     prev_trans = tb_trans[j]
-            # # merge
-            # assert(best_idx > 0)
-            # tb_centr[best_idx - 1] = (tb_trans[best_idx - 1] * tb_int[best_idx - 1] * tb_centr[best_idx - 1] + tb_trans[best_idx] * tb_int[best_idx]  * tb_centr[best_idx]) / \
-            #         (tb_trans[best_idx - 1] * tb_int[best_idx - 1]  + tb_trans[best_idx] * tb_int[best_idx] )
-            # tb_int[best_idx - 1] = tb_int[best_idx - 1] + tb_int[best_idx]
-            # for j in range(best_idx, n_bins - 1):
-            #     tb_centr[j] = tb_centr[j + 1]
-            #     tb_int[j] = tb_int[j + 1]
-            # last_bin_index = n_bins - 1
 
             # search for merge candidate
             best_idx = -1
@@ -164,13 +163,9 @@ def compute_bin_borders(n_bins: int) -> np.array:
                 
             # merge
             merge_index = min(closer_neighbour(best_idx), best_idx)
-            tb_centr[merge_index] = (tb_trans[merge_index] * tb_int[merge_index] * tb_centr[merge_index] + tb_trans[merge_index + 1] * tb_int[merge_index + 1]  * tb_centr[merge_index + 1]) / \
-                    (tb_trans[merge_index] * tb_int[merge_index]  + tb_trans[merge_index + 1] * tb_int[merge_index + 1])
-            tb_int[merge_index] = tb_int[merge_index] + tb_int[merge_index + 1]
-            for j in range(merge_index + 1, n_bins - 1):
-                tb_centr[j] = tb_centr[j + 1]
-                tb_int[j] = tb_int[j + 1]
+            merge(merge_index, merge_index + 1)
             last_bin_index = n_bins - 1
+            
     
     borders = np.concatenate(([0.0], tb_centr[:-1], [integration_range_end]))
     inf_indices = np.isinf(borders)
