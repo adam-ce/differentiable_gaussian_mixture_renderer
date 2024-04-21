@@ -56,38 +56,6 @@ def c(xes: np.array) -> np.array:
 def vol_val(xes: np.array) -> np.array:
     return c(xes)*gm(xes)*np.exp(-integrate_gm_0_to(xes))
 
-def compute_bin_borders_1(n_bins: int) -> np.array:
-    transmission_threshold = 0.05
-    centr_p_k_sig = (centroids + SDs * 2).reshape(-1)
-    g_ints = integrate_g_0_to(centr_p_k_sig.reshape(-1, 1)).reshape(-1)
-    ordered_indices = np.argsort(centr_p_k_sig)
-    transmittance = 1
-    transmittance_step = 1 / n_bins
-    tb_centr = np.zeros(n_bins - 1)
-    tb_weight = np.zeros(n_bins - 1)
-    
-    def bin_for(transmission):
-        t_flipped_and_scaled = 1 - (transmission - transmission_threshold) / (1 - transmission_threshold);
-        t_bin = int(min(t_flipped_and_scaled, 1.0001) * (len(tb_centr) - 1))
-        return t_bin;
-
-    for index in ordered_indices:
-        # last_bin_index = bin_for(transmittance)
-        bin_index_1 = bin_for(1)
-        bin_index_0 = bin_for(0)
-        transmittance = transmittance * np.exp(-g_ints[index])
-        current_bin_index = bin_for(transmittance)
-        tb_centr[current_bin_index] += centroids[index] * transmittance
-        tb_weight[current_bin_index] += transmittance
-    
-    borders = np.concatenate(([0.0], tb_centr / tb_weight, [(centroids + SDs * 3).reshape(-1).max()]))
-    nan_indices = np.isnan(borders)
-    valid_indices = ~nan_indices
-    borders[nan_indices] = np.interp(np.flatnonzero(nan_indices), 
-                                 np.flatnonzero(valid_indices), 
-                                 borders[valid_indices])
-    return borders.reshape(1, -1), np.zeros_like(borders)
-
 def compute_bin_borders(n_bins: int) -> np.array:
     transmission_threshold = 0.05
     centr_p_k_sig = (centroids + SDs * 2).reshape(-1)
@@ -327,15 +295,15 @@ plt.plot(xes.reshape(-1), gm(xes), label='gm', zorder=1) # color="tab:blue",
 # plt.plot(xes.reshape(-1), gm_int, label='gm integrated') # , color="tab:green"
 # plt.plot(xes.reshape(-1), integrate_gm_0_to(xes), label='integrate_gm_0_to')
 # plt.plot(xes.reshape(-1), np.exp(-1 * gm_int), label='transmittance')
-plt.plot(xes.reshape(-1), gm_evals * np.exp(-1 * gm_int), label='transmittance * gm')
-# plt.plot(xes.reshape(-1), c(xes), label='c')
+# plt.plot(xes.reshape(-1), gm_evals * np.exp(-1 * gm_int), label='transmittance * gm')
+plt.plot(xes.reshape(-1), c(xes), label='c')
 # plt.plot(xes.reshape(-1), vol_val(xes), label='vol_val gm')
 plt.plot(xes.reshape(-1), vol_int(gm, c), label='vol_int gm')
 plt.plot(xes.reshape(-1), vol_int(f_lin_approx, c_lin_approx), label='vol_int approx')
 
 # plt.plot(xes.reshape(-1), np.cumsum(vol_val(xes)) * delta, label='vol_int')
 # plt.scatter(bin_borders, c_bin_borders, label='c_bin_borders')
-# plt.plot(xes.reshape(-1), c_lin_approx(xes), label='c_interpol')
+plt.plot(xes.reshape(-1), c_lin_approx(xes), label='c_interpol')
 # plt.plot(np.array([0-1, 17]), np.array([0, 0]), color="lightgray", zorder=0)
 plt.plot(xes.reshape(-1), f_lin_approx(xes), label='f', color="tab:orange", zorder=1)
 # plt.plot(xes.reshape(-1), f_lin_approx(xes) * np.exp(-1 * gm_int), label='f * transmittance', color="tab:orange", zorder=1)
