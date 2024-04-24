@@ -126,6 +126,28 @@ STROKE_DEVICES_INLINE glm::vec<2, scalar_t> larger2(const glm::vec<3, scalar_t>&
 }
 
 template <typename scalar_t>
+STROKE_DEVICES_INLINE glm::vec<2, scalar_t> smaller2(const glm::vec<3, scalar_t>& vec)
+{
+    // if (vec[0] < vec[1] && vec[0] < vec[2])
+    //     return glm::vec<2, scalar_t>(vec[1], vec[2]);
+
+    // if (vec[1] < vec[0] && vec[1] < vec[2])
+    //     return glm::vec<2, scalar_t>(vec[0], vec[2]);
+
+    // return glm::vec<2, scalar_t>(vec[0], vec[1]);
+
+    if (vec[0] > vec[1]) {
+        if (vec[0] > vec[2])
+            return glm::vec<2, scalar_t>(vec[1], vec[2]);
+    } else {
+        if (vec[1] > vec[2])
+            return glm::vec<2, scalar_t>(vec[0], vec[2]);
+    }
+
+    return glm::vec<2, scalar_t>(vec[0], vec[1]);
+}
+
+template <typename scalar_t>
 STROKE_DEVICES_INLINE glm::mat<3, 3, scalar_t> make_jakobian(const glm::vec<3, scalar_t>& t, scalar_t l_prime, scalar_t focal_x = 1, scalar_t focal_y = 1)
 {
     using mat3_t = glm::mat<3, 3, scalar_t>;
@@ -273,6 +295,15 @@ STROKE_DEVICES_INLINE Gaussian2d<scalar_t> splat(
         const auto detSJ = det(SJ); // det(SJ) == det(S) * det(J)
 
         const auto i2prime = math::integrate_exponential(larger2(cov3d_scale));
+        const auto i2 = stroke::gaussian::integrate_exponential(screen_space_gaussian.cov);
+        screen_space_gaussian.weight = weight * detSJ * i2prime / i2;
+        break;
+    }
+    case Formulation::Ols: {
+        screen_space_gaussian.cov += filter_kernel;
+        const auto detSJ = det(SJ); // det(SJ) == det(S) * det(J)
+
+        const auto i2prime = math::integrate_exponential(smaller2(cov3d_scale));
         const auto i2 = stroke::gaussian::integrate_exponential(screen_space_gaussian.cov);
         screen_space_gaussian.weight = weight * detSJ * i2prime / i2;
         break;

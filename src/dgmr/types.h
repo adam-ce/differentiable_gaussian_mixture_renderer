@@ -24,8 +24,7 @@ enum class Formulation : int {
     Opacity, // original
     Mass,
     Density,
-    Ots // Opacity thin side, view dependent, but scaled between 0 and 1
+    Ots, // Opacity thin side, view dependent, but scaled between 0 and 1 for the shortest axis of the gaussian
+    Ols // Opacity long side, view dependent, but scaled between 0 and 1 for the longest axis of the gaussian
 };
-
-
 }

@@ -166,3 +166,16 @@ TEST_CASE("dgmr utils: larger 2")
     CHECK(check(dgmr::math::larger2(glm::ivec3(3, 2, 1))));
     CHECK(check(dgmr::math::larger2(glm::ivec3(3, 1, 2))));
 }
+TEST_CASE("dgmr utils: smaller 2")
+{
+    const auto check = [](glm::ivec2 v) {
+        return v == glm::ivec2(2, 3) || v == glm::ivec2(3, 2);
+    };
+
+    CHECK(check(dgmr::math::smaller2(glm::ivec3(4, 2, 3))));
+    CHECK(check(dgmr::math::smaller2(glm::ivec3(4, 3, 2))));
+    CHECK(check(dgmr::math::smaller2(glm::ivec3(2, 3, 4))));
+    CHECK(check(dgmr::math::smaller2(glm::ivec3(2, 4, 3))));
+    CHECK(check(dgmr::math::smaller2(glm::ivec3(3, 2, 4))));
+    CHECK(check(dgmr::math::smaller2(glm::ivec3(3, 4, 2))));
+}
