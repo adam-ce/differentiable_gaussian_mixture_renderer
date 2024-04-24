@@ -40,31 +40,7 @@ STROKE_DEVICES glm::vec3 clamp_cov_scales(const glm::vec3& cov_scales)
     const auto min_value = max_value * 0.01f;
     return glm::clamp(cov_scales, min_value, max_value);
 }
-
-STROKE_DEVICES glm::vec3 project(const glm::vec3& point, const glm::mat4& projection_matrix)
-{
-    auto pp = projection_matrix * glm::vec4(point, 1.f);
-    pp /= pp.w + 0.0000001f;
-    return glm::vec3(pp);
-}
-
-template <typename scalar_t>
-STROKE_DEVICES_INLINE stroke::Cov2<scalar_t> affine_transform_and_cut(const stroke::Cov3<scalar_t>& S, const glm::mat<3, 3, scalar_t>& M)
-{
-    return {
-        M[0][0] * (S[0] * M[0][0] + S[1] * M[1][0] + S[2] * M[2][0]) + M[1][0] * (S[1] * M[0][0] + S[3] * M[1][0] + S[4] * M[2][0]) + M[2][0] * (S[2] * M[0][0] + S[4] * M[1][0] + S[5] * M[2][0]),
-        M[0][0] * (S[0] * M[0][1] + S[1] * M[1][1] + S[2] * M[2][1]) + M[1][0] * (S[1] * M[0][1] + S[3] * M[1][1] + S[4] * M[2][1]) + M[2][0] * (S[2] * M[0][1] + S[4] * M[1][1] + S[5] * M[2][1]),
-        M[0][1] * (S[0] * M[0][1] + S[1] * M[1][1] + S[2] * M[2][1]) + M[1][1] * (S[1] * M[0][1] + S[3] * M[1][1] + S[4] * M[2][1]) + M[2][1] * (S[2] * M[0][1] + S[4] * M[1][1] + S[5] * M[2][1])
-    };
-}
-struct ConicAndOpacity {
-    stroke::SymmetricMat<2, float> conic;
-    float opacity;
-};
-static_assert(sizeof(ConicAndOpacity) == 4 * 4);
-
 // from inria:
-
 #define CHECK_CUDA(debug)                                                                                              \
     if (debug) {                                                                                                       \
         auto ret = cudaDeviceSynchronize();                                                                            \
@@ -110,34 +86,6 @@ STROKE_DEVICES_INLINE glm::vec3 computeColorFromSH(int deg, const glm::vec3& pos
     clamped->y = (result.y < 0);
     clamped->z = (result.z < 0);
     return glm::max(result, 0.0f);
-}
-
-// Forward version of 2D covariance matrix computation
-STROKE_DEVICES_INLINE stroke::Cov2<float> computeCov2D(const glm::vec3& mean, float focal_x, float focal_y, float tan_fovx, float tan_fovy, const stroke::Cov3<float>& cov3D, const glm::mat4& viewmatrix)
-{
-    // The following models the steps outlined by equations 29
-    // and 31 in "EWA Splatting" (Zwicker et al., 2002).
-    // Additionally considers aspect / scaling of viewport.
-    // Transposes used to account for row-/column-major conventions.
-    auto t = glm::vec3(viewmatrix * glm::vec4(mean, 1.f));
-
-    const float limx = 1.3f * tan_fovx;
-    const float limy = 1.3f * tan_fovy;
-    const float txtz = t.x / t.z;
-    const float tytz = t.y / t.z;
-    t.x = min(limx, max(-limx, txtz)) * t.z;
-    t.y = min(limy, max(-limy, tytz)) * t.z;
-
-    // adam does not understand, why the last row is 0, and how aspect / scaling considerations work.
-    // glm is column major, the first 3 elements are the first column..
-    glm::mat3 J = glm::mat3(
-        glm::mat3::col_type(focal_x / t.z, 0.0f, 0.f),
-        glm::mat3::col_type(0.0f, focal_y / t.z, 0.f),
-        glm::mat3::col_type(-(focal_x * t.x) / (t.z * t.z), -(focal_y * t.y) / (t.z * t.z), 0.f));
-
-    glm::mat3 W = glm::mat3(viewmatrix);
-    glm::mat3 T = J * W;
-    return affine_transform_and_cut(cov3D, T);
 }
 
 STROKE_DEVICES_INLINE void getRect(const glm::vec2& p, const glm::ivec2& ext_rect, glm::uvec2* rect_min, glm::uvec2* rect_max, const dim3& render_grid_dim)
@@ -213,6 +161,10 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
 
     // preprocess, run per Gaussian
     {
+        math::Camera<float> camera {
+            data.view_matrix, data.proj_matrix, focal_x, focal_y, data.tan_fovx, data.tan_fovy, fb_width, fb_height
+        };
+
         const dim3 block_dim = { 128 };
         const dim3 grid_dim = whack::grid_dim_from_total_size({ data.gm_weights.size<0>() }, block_dim);
         whack::start_parallel(
@@ -229,38 +181,34 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                 const auto centroid = data.gm_centroids(idx);
                 if ((data.view_matrix * glm::vec4(centroid, 1.f)).z < 0.2) // adam doesn't understand, why projection matrix > 0 isn't enough.
                     return;
-                const auto projected_centroid = project(centroid, data.proj_matrix);
-                if (projected_centroid.z < 0.0)
-                    return;
+
+                const auto weights = data.gm_weights(idx);
+                const auto scales = data.gm_cov_scales(idx) * data.cov_scale_multiplier;
+                const auto rotations = data.gm_cov_rotations(idx);
+
+                const auto screen_space_gaussian = math::splat<vol_raster::config::gaussian_mixture_formulation>(weights, centroid, scales, rotations, camera, 0.3f);
 
                 const auto cov3d = math::compute_cov(clamp_cov_scales(data.gm_cov_scales(idx)), data.gm_cov_rotations(idx));
 
                 // low pass filter to combat aliasing
                 const auto filter_kernel_size = glm::distance(centroid, data.cam_poition) * aa_distance_multiplier;
                 const auto filter_kernel = math::orient_filter_kernel<float>({ .direction = glm::normalize(data.cam_poition - centroid), .kernel_scales = { filter_kernel_size, filter_kernel_size, 0 } });
-                const auto filtered_cov_3d = cov3d + filter_kernel;
-                const auto cov2d = computeCov2D(centroid, focal_x, focal_y, data.tan_fovx, data.tan_fovy, cov3d, data.view_matrix);
-                const auto [filtered_cov_2d, aa_weight_factor] = math::convolve_unnormalised_with_normalised(cov2d, stroke::Cov2<float>(config::filter_kernel_SD * config::filter_kernel_SD));
-                g_filtered_weights(idx) = aa_weight_factor * data.gm_weights(idx);
+
+                const auto [filtered_cov_3d, aa_weight_factor] = math::convolve_unnormalised_with_normalised(cov3d, filter_kernel);
+                g_filtered_weights(idx) = math::weight_to_density<vol_raster::config::gaussian_mixture_formulation>(weights, scales) * aa_weight_factor; // inaccuracy due to filtering
 
                 // using the more aggressive computation for calculating overlapping tiles:
                 {
-                    const auto ndc2Pix = [](float v, int S) {
-                        return ((v + 1.0) * S - 1.0) * 0.5;
-                    };
-                    // glm::vec2 point_image = ((glm::vec2(projected_centroid) + 1.f) * glm::vec2(fb_width, fb_height) - 1.f) * 0.5f; // same as ndc2Pix
-                    glm::vec2 point_image = { ndc2Pix(projected_centroid.x, fb_width), ndc2Pix(projected_centroid.y, fb_height) }; // todo: ndc2Pix looks strange to me.
-
-                    const glm::uvec2 my_rect = { (int)ceil(3.f * sqrt(filtered_cov_2d[0])), (int)ceil(3.f * sqrt(filtered_cov_2d[2])) };
+                    const glm::uvec2 my_rect = { (int)ceil(3.f * sqrt(screen_space_gaussian.cov[0])), (int)ceil(3.f * sqrt(screen_space_gaussian.cov[2])) };
                     g_rects(idx) = my_rect;
                     glm::uvec2 rect_min, rect_max;
-                    getRect(point_image, my_rect, &rect_min, &rect_max, render_grid_dim);
+                    getRect(screen_space_gaussian.centroid, my_rect, &rect_min, &rect_max, render_grid_dim);
 
                     const auto tiles_touched = (rect_max.x - rect_min.x) * (rect_max.y - rect_min.y);
                     if (tiles_touched == 0)
                         return; // serves as clipping (i think)
                     g_tiles_touched(idx) = tiles_touched;
-                    g_points_xy_image(idx) = point_image;
+                    g_points_xy_image(idx) = screen_space_gaussian.centroid;
                 }
 
                 //				g_depths(idx) = glm::length(data.cam_poition - centroid);

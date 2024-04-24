@@ -22,6 +22,8 @@
 #include <whack/TensorView.h>
 #include <whack/array.h>
 
+#include "types.h"
+
 namespace dgmr {
 
 struct VolRasterStatistics {
@@ -67,6 +69,7 @@ namespace vol_raster {
         static constexpr float gaussian_relevance_sigma = 3.f;
         static constexpr bool use_orientation_dependent_gaussian_density = false; // true for rendering original gaussian splatting results
         static constexpr float workaround_variance_add_along_ray = 0.000f; // reduces artefacts in small details?
+        static constexpr Formulation gaussian_mixture_formulation = Formulation::Ots;
     };
 } // namespace vol_raster
 
