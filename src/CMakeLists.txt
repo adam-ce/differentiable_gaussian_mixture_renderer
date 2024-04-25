@@ -38,6 +38,7 @@ add_library(differentiable_gaussian_mixture_renderer
     dgmr/vol_raster_forward.h	dgmr/vol_raster_forward.cu
 	dgmr/constants.h
     dgmr/math.h    dgmr/grad/math.h
+    dgmr/piecewise_linear.h
     dgmr/raster_bin_sizers.h
     dgmr/types.h
 )

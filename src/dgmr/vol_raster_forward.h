@@ -67,7 +67,6 @@ namespace vol_raster {
         static constexpr unsigned n_rasterisation_steps = 16;
         static constexpr float transmission_threshold = 0.001f;
         static constexpr float gaussian_relevance_sigma = 3.f;
-        static constexpr bool use_orientation_dependent_gaussian_density = false; // true for rendering original gaussian splatting results
         static constexpr float workaround_variance_add_along_ray = 0.000f; // reduces artefacts in small details?
         static constexpr Formulation gaussian_mixture_formulation = Formulation::Ots;
     };
