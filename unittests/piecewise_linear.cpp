@@ -65,7 +65,7 @@ TEST_CASE("dgmr piecewise_linear function fitting")
 TEST_CASE("dgmr piecewise_linear vol int")
 {
     constexpr auto n_ref_steps = 1000000;
-    constexpr auto n_steps_per_bin = 200;
+    constexpr auto n_steps_per_bin = 256;
     constexpr auto gmn = 0.0000001; // minimum eval value. a gm will always eval to something > 0 if there are gaussians at all.
 
     // create 8 bins with piecewise_linear FunctionGroups

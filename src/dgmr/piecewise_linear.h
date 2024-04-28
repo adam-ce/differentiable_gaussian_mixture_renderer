@@ -116,16 +116,19 @@ FunctionGroup<scalar_t> create_approximation(
 template <typename scalar_t>
 glm::vec<3, scalar_t> volume_integrate(const whack::Array<FunctionGroup<scalar_t>, 8>& approximations, unsigned n_steps_per_bin)
 {
-    glm::dvec3 result = {};
-    double current_m = 0;
+    glm::vec<3, scalar_t> result = {};
+    scalar_t current_m = 0;
+    scalar_t current_transparency = 1;
     for (const FunctionGroup<scalar_t>& f : approximations) {
         const auto delta_t = f.t_right / n_steps_per_bin;
-        double t = delta_t / 2;
+        scalar_t t = delta_t / 2;
         for (unsigned i = 0; i < n_steps_per_bin; ++i) {
             assert(t < f.t_right);
             const auto eval_t = f.sample(t);
-            result += glm::dvec3(eval_t) * stroke::exp(-current_m) * delta_t;
+            // result += glm::dvec3(eval_t) * stroke::exp(-current_m) * delta_t;
+            result += glm::vec<3, scalar_t>(eval_t) * current_transparency * delta_t;
             current_m += eval_t.w * delta_t;
+            current_transparency *= stroke::max(scalar_t(0), 1 - eval_t.w * delta_t);
             t += delta_t;
         }
     }
