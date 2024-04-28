@@ -32,6 +32,7 @@ struct FunctionGroup {
     Vec t1;
     Vec t2;
     Vec k2;
+    scalar_t t_right;
 
     glm::vec<4, scalar_t> sample(scalar_t t) const
     {
@@ -65,35 +66,70 @@ FunctionGroup<scalar_t> create_approximation(
 {
     const auto m_l = masses_percent_left * masses_total;
     const auto m_r = masses_total - m_l;
-    auto f = FunctionGroup<scalar_t> { eval_left, {}, scalar_t(2) * m_l / eval_left, t_right - scalar_t(2) * m_r / eval_right, {} };
+    auto f = FunctionGroup<scalar_t> { eval_left, {}, scalar_t(2) * m_l / eval_left, t_right - scalar_t(2) * m_r / eval_right, {}, t_right };
     const auto compute = [&](int i) {
+        if (masses_total[i] <= 0) { // happens for colours
+            f.d0[i] = 0;
+            f.k0[i] = 0;
+            f.t1[i] = 0;
+            f.t2[i] = t_right;
+            f.k2[i] = 0;
+            return;
+        }
+
         if (f.t2[i] > f.t1[i]) {
             f.k0[i] = -eval_left[i] * eval_left[i] / (2 * m_l[i]);
             f.k2[i] = eval_right[i] * eval_right[i] / (2 * m_r[i]);
-        } else {
-            const auto m = masses_total[i];
-            const auto gm_l = eval_left[i];
-            const auto gm_r = eval_right[i];
-            const auto t_omega = t_right; // t_left is always zero in this implementation
-            const auto c1 = 2 * m - (gm_l + gm_r) * t_omega;
-            const auto c2 = gm_r * m_l[i] + gm_l * m_r[i];
-            const auto c3 = gm_l * gm_r * t_omega;
-            const auto dm = (c1 + stroke::sqrt(c1 * c1 + 4 * t_omega * (2 * c2 - c3))) / (2 * t_omega);
-            assert(dm >= 0);
-            const auto tr = 2 * m_r[i] / (dm + gm_r);
-            assert(tr >= 0);
-            const auto tl = t_omega - tr;
-            assert(tl >= 0);
-
-            f.k0[i] = -(gm_l - dm) / tl;
-            f.t1[i] = tl;
-            f.t2[i] = tl;
-            f.k2[i] = (gm_r - dm) / tr;
+            return;
         }
+
+        const auto m = masses_total[i];
+        const auto gm_l = eval_left[i];
+        const auto gm_r = eval_right[i];
+        const auto t_omega = t_right; // t_left is always zero in this implementation
+        const auto c1 = 2 * m - (gm_l + gm_r) * t_omega;
+        const auto c2 = gm_r * m_l[i] + gm_l * m_r[i];
+        const auto c3 = gm_l * gm_r * t_omega;
+        const auto dm = (c1 + stroke::sqrt(c1 * c1 + 4 * t_omega * (2 * c2 - c3))) / (2 * t_omega);
+        assert(dm >= 0);
+        const auto tr = 2 * m_r[i] / (dm + gm_r);
+        assert(tr >= 0);
+        const auto tl_p = t_omega - tr;
+        const auto tl = 2 * m_l[i] / (dm + gm_l); // more stable than tl_p for ml[i] == 0
+        assert(tl >= 0);
+        assert(stroke::abs(tl - tl_p) < 0.0000001);
+
+        f.k0[i] = -(gm_l - dm) / tl;
+        if (tl == 0)
+            f.k0[i] = 0;
+        f.t1[i] = tl;
+        f.t2[i] = tl;
+        f.k2[i] = (gm_r - dm) / tr;
+        if (tr == 0)
+            f.k2[i] = 0;
     };
     for (unsigned i = 0; i < 4; ++i)
         compute(i);
     return f;
+}
+
+template <typename scalar_t>
+glm::vec<3, scalar_t> volume_integrate(const whack::Array<FunctionGroup<scalar_t>, 8>& approximations, unsigned n_steps_per_bin)
+{
+    glm::dvec3 result = {};
+    double current_m = 0;
+    for (const FunctionGroup<scalar_t>& f : approximations) {
+        const auto delta_t = f.t_right / n_steps_per_bin;
+        double t = delta_t / 2;
+        for (unsigned i = 0; i < n_steps_per_bin; ++i) {
+            assert(t < f.t_right);
+            const auto eval_t = f.sample(t);
+            result += glm::dvec3(eval_t) * stroke::exp(-current_m) * delta_t;
+            current_m += eval_t.w * delta_t;
+            t += delta_t;
+        }
+    }
+    return result;
 }
 
 } // namespace dgmr::piecewise_linear
