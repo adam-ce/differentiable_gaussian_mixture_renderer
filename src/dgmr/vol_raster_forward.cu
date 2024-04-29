@@ -20,8 +20,9 @@
 #include <cub/device/device_radix_sort.cuh>
 
 #include "constants.h"
-#include "raster_bin_sizers.h"
 #include "math.h"
+#include "piecewise_linear.h"
+#include "raster_bin_sizers.h"
 #include "vol_raster_forward.h"
 
 #include <stroke/gaussian.h>
@@ -195,7 +196,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                 const auto filter_kernel = math::orient_filter_kernel<float>({ .direction = glm::normalize(data.cam_poition - centroid), .kernel_scales = { filter_kernel_size, filter_kernel_size, 0 } });
 
                 const auto [filtered_cov_3d, aa_weight_factor] = math::convolve_unnormalised_with_normalised(cov3d, filter_kernel);
-                g_density(idx) = math::weight_to_density<vol_raster::config::gaussian_mixture_formulation>(weights, scales) * aa_weight_factor; // inaccuracy due to filtering
+                g_density(idx) = math::weight_to_density<vol_raster::config::gaussian_mixture_formulation>(weights, scales) * aa_weight_factor * gaussian::integrate_exponential(cov3d); // inaccuracy due to filtering
 
                 // using the more aggressive computation for calculating overlapping tiles:
                 {
@@ -368,11 +369,12 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
 
                 // Allocate storage for batches of collectively fetched data.
                 __shared__ int collected_id[render_block_size];
-                __shared__ float collected_weight[render_block_size];
+                __shared__ float collected_density[render_block_size];
                 __shared__ glm::vec3 collected_centroid[render_block_size];
                 __shared__ stroke::Cov3<float> collected_inv_cov3[render_block_size];
 
-                whack::Array<glm::vec4, vol_raster::config::n_rasterisation_steps> rasterised_data = {};
+                whack::Array<glm::vec4, vol_raster::config::n_rasterisation_steps> bin_mass = {};
+                whack::Array<glm::vec4, vol_raster::config::n_rasterisation_steps + 1> bin_eval = {};
                 math::RasterBinSizer<vol_raster::config> rasterisation_bin_sizer;
 
                 // Iterate over batches until all done or range is complete: compute max depth
@@ -390,7 +392,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                         collected_id[thread_rank] = coll_id;
                         collected_centroid[thread_rank] = data.gm_centroids(coll_id);
                         collected_inv_cov3[thread_rank] = g_inverse_filtered_cov3d(coll_id);
-                        collected_weight[thread_rank] = g_density(coll_id);
+                        collected_density[thread_rank] = g_density(coll_id);
                     }
                     __syncthreads();
 
@@ -400,15 +402,15 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                     // Iterate over current batch
                     for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
                         const auto gaussian1d = gaussian::intersect_with_ray_inv_C(collected_centroid[j], collected_inv_cov3[j], ray);
-                        auto weight = gaussian1d.weight * collected_weight[j];
+                        auto density = gaussian1d.weight * collected_density[j];
                         // if (vol_raster::config::use_orientation_dependent_gaussian_density)
                         // weight *= gaussian::norm_factor(gaussian1d.C) / gaussian::norm_factor_inv_C(collected_inv_cov3[j]);
 
-                        if (weight < 0.0001 || weight > 1'000)
+                        if (density < 0.0001 || density > 1'000)
                             continue;
                         if (gaussian1d.C + vol_raster::config::workaround_variance_add_along_ray <= 0)
                             continue;
-                        rasterisation_bin_sizer.add_gaussian(weight, gaussian1d.centre, stroke::sqrt(gaussian1d.C + vol_raster::config::workaround_variance_add_along_ray));
+                        rasterisation_bin_sizer.add_gaussian(density, gaussian1d.centre, stroke::sqrt(gaussian1d.C + vol_raster::config::workaround_variance_add_along_ray));
                         if (rasterisation_bin_sizer.is_full()) {
                             done = true;
                             break;
@@ -438,7 +440,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                         collected_id[thread_rank] = coll_id;
                         collected_centroid[thread_rank] = data.gm_centroids(coll_id);
                         collected_inv_cov3[thread_rank] = g_inverse_filtered_cov3d(coll_id);
-                        collected_weight[thread_rank] = g_density(coll_id);
+                        collected_density[thread_rank] = g_density(coll_id);
                     }
                     // block.sync();
                     __syncthreads();
@@ -453,7 +455,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                         const auto centroid = gaussian1d.centre;
                         const auto variance = gaussian1d.C + vol_raster::config::workaround_variance_add_along_ray;
                         const auto inv_sd = 1 / stroke::sqrt(variance);
-                        auto weight = gaussian1d.weight * collected_weight[j];
+                        auto weight = gaussian1d.weight * collected_density[j];
                         // if (vol_raster::config::use_orientation_dependent_gaussian_density)
                         // weight *= gaussian::norm_factor(gaussian1d.C) / gaussian::norm_factor_inv_C(collected_inv_cov3[j]);
 
@@ -463,17 +465,21 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                             printf("weight: %f, gaussian1d.C: %f, collected_cov3[j]: %f/%f/%f/%f/%f/%f, det: %f\n", weight, variance, inv_cov[0], inv_cov[1], inv_cov[2], inv_cov[3], inv_cov[4], inv_cov[5], det(inv_cov));
                             //							printf("weight: %f, gaussian1d.weight: %f, collected_weight[j]: %f, stroke::gaussian::norm_factor(gaussian1d.C): %f, gaussian1d.C: %f\n", weight, gaussian1d.weight, collected_weight[j], stroke::gaussian::norm_factor(gaussian1d.C), gaussian1d.C);
                         }
-                        if (weight * gaussian::integrate_inv_SD(centroid, inv_sd, { 0, rasterisation_bin_sizer.max_distance() }) <= 0.001f) // performance critical
-                            continue;
+                        // if (weight * gaussian::integrate_inv_SD(centroid, inv_sd, { 0, rasterisation_bin_sizer.max_distance() }) <= 0.001f) // performance critical
+                        //     continue;
 
                         auto cdf_start = gaussian::cdf_inv_SD(centroid, inv_sd, 0.f);
                         for (auto k = 0u; k < vol_raster::config::n_rasterisation_steps; ++k) {
                             const auto cdf_end = gaussian::cdf_inv_SD(centroid, inv_sd, rasterisation_bin_sizer.end_of(k));
-                            const auto integrated = (cdf_end - cdf_start) * weight;
+                            const auto mass = (cdf_end - cdf_start) * weight;
                             cdf_start = cdf_end;
                             //                            const auto integrated = weight * gaussian::integrate_inv_SD(centroid, inv_sd, { rasterisation_bin_sizer.begin_of(k), rasterisation_bin_sizer.end_of(k) });
-                            rasterised_data[k] += glm::vec4(g_rgb(collected_id[j]) * integrated, integrated);
+                            bin_mass[k] += glm::vec4(g_rgb(collected_id[j]) * mass, mass);
+                            const auto eval = weight * gaussian::eval_exponential(centroid, variance, rasterisation_bin_sizer.begin_of(k));
+                            bin_eval[k] += glm::vec4(g_rgb(collected_id[j]) * eval, eval);
                         }
+                        const auto eval = weight * gaussian::eval_exponential(centroid, variance, rasterisation_bin_sizer.end_of(vol_raster::config::n_rasterisation_steps - 1));
+                        bin_eval[vol_raster::config::n_rasterisation_steps] += glm::vec4(g_rgb(collected_id[j]) * eval, eval);
 
                         // terminates too early when an intense gaussian is ordered behind many less intense ones, but its location is in front
                         // it does produce artefacts, e.g. onion rings in the hohe veitsch scene.
@@ -487,45 +493,69 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                     }
                 }
 
+                constexpr auto n_steps_per_bin = 1024;
+
                 // blend
                 float T = 1.0f;
                 glm::vec3 C = glm::vec3(0);
                 switch (data.debug_render_mode) {
                 case VolRasterForwardData::RenderMode::Full: {
-                    for (auto k = 0; k < vol_raster::config::n_rasterisation_steps; ++k) {
-                        auto current_bin = rasterised_data[k];
-                        for (auto i = 0; i < 3; ++i) {
-                            current_bin[i] /= current_bin[3] + 0.001f; // make an weighted average out of a weighted sum
-                        }
-                        // Avoid numerical instabilities (see paper appendix).
-                        float alpha = min(0.99f, current_bin[3]);
-                        if (alpha < 1.0f / 255.0f)
+
+                    glm::vec<3, float> result = {};
+                    // float current_m = 0;
+                    float current_transparency = 1;
+                    for (auto k = 0u; k < vol_raster::config::n_rasterisation_steps; ++k) {
+                        // auto current_bin = rasterised_data[k];
+                        // for (auto i = 0; i < 3; ++i) {
+                        //     current_bin[i] /= current_bin[3] + 0.001f; // make an weighted average out of a weighted sum
+                        // }
+                        // // Avoid numerical instabilities (see paper appendix).
+                        // float alpha = min(0.99f, current_bin[3]);
+                        // if (alpha < 1.0f / 255.0f)
+                        //     continue;
+
+                        // float test_T = T * (1 - alpha);
+                        // if (test_T < 0.0001f) {
+                        //     done = true;
+                        //     break;
+                        // }
+
+                        // // Eq. (3) from 3D Gaussian splatting paper.
+                        // C += glm::vec3(current_bin) * alpha * T;
+
+                        // T = test_T;
+
+                        const auto t_right = rasterisation_bin_sizer.end_of(k) - rasterisation_bin_sizer.begin_of(k);
+                        if (t_right <= 0)
                             continue;
+                        const auto f = dgmr::piecewise_linear::create_approximation(glm::vec4(0.5, 0.5, 0.5, 0.5), bin_mass[k], bin_eval[k], bin_eval[k + 1], t_right);
 
-                        float test_T = T * (1 - alpha);
-                        if (test_T < 0.0001f) {
-                            done = true;
-                            break;
+                        const auto delta_t = f.t_right / n_steps_per_bin;
+                        float t = delta_t / 2;
+                        for (unsigned i = 0; i < n_steps_per_bin; ++i) {
+                            assert(t < f.t_right);
+                            const auto eval_t = f.sample(t);
+                            // result += glm::dvec3(eval_t) * stroke::exp(-current_m) * delta_t;
+                            result += glm::vec<3, float>(eval_t) * current_transparency * delta_t;
+                            // current_m += eval_t.w * delta_t;
+                            current_transparency *= stroke::max(float(0), 1 - eval_t.w * delta_t);
+                            t += delta_t;
                         }
-
-                        // Eq. (3) from 3D Gaussian splatting paper.
-                        C += glm::vec3(current_bin) * alpha * T;
-
-                        T = test_T;
+                        C = result;
                     }
                     break;
                 }
                 case VolRasterForwardData::RenderMode::Bins: {
-                    const auto bin = stroke::min(unsigned(data.debug_render_bin), config::n_rasterisation_steps - 1);
-                    auto current_bin = rasterised_data[bin];
-                    for (auto i = 0; i < 3; ++i) {
-                        current_bin[i] /= current_bin[3] + 0.001f; // make an weighted average out of a weighted sum
-                    }
-                    float alpha = min(0.99f, current_bin[3]);
-                    float test_T = T * (1 - alpha);
-                    C += glm::vec3(current_bin) * alpha * T;
+                    // const auto bin = stroke::min(unsigned(data.debug_render_bin), config::n_rasterisation_steps - 1);
+                    // auto current_bin = rasterised_data[bin];
+                    // for (auto i = 0; i < 3; ++i) {
+                    //     current_bin[i] /= current_bin[3] + 0.001f; // make an weighted average out of a weighted sum
+                    // }
+                    // float alpha = min(0.99f, current_bin[3]);
+                    // float test_T = T * (1 - alpha);
+                    // C += glm::vec3(current_bin) * alpha * T;
 
-                    T = test_T;
+                    // T = test_T;
                     break;
                 }
                 case VolRasterForwardData::RenderMode::Depth: {

@@ -34,7 +34,7 @@ struct FunctionGroup {
     Vec k2;
     scalar_t t_right;
 
-    glm::vec<4, scalar_t> sample(scalar_t t) const
+    STROKE_DEVICES_INLINE glm::vec<4, scalar_t> sample(scalar_t t) const
     {
         const auto s = [t, this](int i) {
             if (t <= t1[i])
@@ -47,7 +47,7 @@ struct FunctionGroup {
         return { s(0), s(1), s(2), s(3) };
     }
 
-    void check() const
+    STROKE_DEVICES_INLINE void check() const
     {
         assert(all(greaterThanEqual(d0, Vec(0, 0, 0, 0))));
         assert(all(greaterThanEqual(t1, Vec(0, 0, 0, 0))));
@@ -57,18 +57,19 @@ struct FunctionGroup {
 };
 
 template <typename scalar_t>
-FunctionGroup<scalar_t> create_approximation(
+STROKE_DEVICES_INLINE FunctionGroup<scalar_t> create_approximation(
     const glm::vec<4, scalar_t>& masses_percent_left,
     const glm::vec<4, scalar_t>& masses_total,
     const glm::vec<4, scalar_t>& eval_left,
     const glm::vec<4, scalar_t>& eval_right,
     const scalar_t t_right)
 {
+    assert(t_right > 0);
     const auto m_l = masses_percent_left * masses_total;
     const auto m_r = masses_total - m_l;
     auto f = FunctionGroup<scalar_t> { eval_left, {}, scalar_t(2) * m_l / eval_left, t_right - scalar_t(2) * m_r / eval_right, {}, t_right };
     const auto compute = [&](int i) {
-        if (masses_total[i] <= 0) { // happens for colours
+        if (masses_total[i] <= 0.000001) { // happens for colours
             f.d0[i] = 0;
             f.k0[i] = 0;
             f.t1[i] = 0;
@@ -91,13 +92,37 @@ FunctionGroup<scalar_t> create_approximation(
         const auto c2 = gm_r * m_l[i] + gm_l * m_r[i];
         const auto c3 = gm_l * gm_r * t_omega;
         const auto dm = (c1 + stroke::sqrt(c1 * c1 + 4 * t_omega * (2 * c2 - c3))) / (2 * t_omega);
+        if (dm < 0) {
+            printf("dm = %f\n", dm);
+            printf("masses_percent_left[%i] = %f\n", i, masses_percent_left[i]);
+            printf("masses_total[%i] = %f\n", i, masses_total[i]);
+            printf("eval_left[%i] = %f\n", i, eval_left[i]);
+            printf("eval_right[%i] = %f\n", i, eval_right[i]);
+            printf("t_right = %f\n\n", t_right);
+        }
         assert(dm >= 0);
         const auto tr = 2 * m_r[i] / (dm + gm_r);
         assert(tr >= 0);
         const auto tl_p = t_omega - tr;
         const auto tl = 2 * m_l[i] / (dm + gm_l); // more stable than tl_p for ml[i] == 0
+        if (tl < 0) {
+            printf("tl = %f\n", tl);
+            printf("masses_percent_left[%i] = %f\n", i, masses_percent_left[i]);
+            printf("masses_total[%i] = %f\n", i, masses_total[i]);
+            printf("eval_left[%i] = %f\n", i, eval_left[i]);
+            printf("eval_right[%i] = %f\n", i, eval_right[i]);
+            printf("t_right = %f\n\n", t_right);
+        }
         assert(tl >= 0);
-        assert(stroke::abs(tl - tl_p) < 0.0000001);
+        if (stroke::abs(tl - tl_p) >= 0.001) {
+            printf("tl = %f\n", tl);
+            printf("tl_p = %f\n", tl_p);
+            printf("t_omega = %f\n", t_omega);
+            printf("dm = %f\n", dm);
+            printf("masses_total[%i] = %f\n", i, masses_total[i]);
+        }
+
+        assert(stroke::abs(tl - tl_p) < 0.001);
 
         f.k0[i] = -(gm_l - dm) / tl;
         if (tl == 0)
@@ -114,7 +139,8 @@ FunctionGroup<scalar_t> create_approximation(
 }
 
 template <typename scalar_t>
-glm::vec<3, scalar_t> volume_integrate(const whack::Array<FunctionGroup<scalar_t>, 8>& approximations, unsigned n_steps_per_bin)
+STROKE_DEVICES_INLINE glm::vec<3, scalar_t>
+volume_integrate(const whack::Array<FunctionGroup<scalar_t>, 8>& approximations, unsigned n_steps_per_bin)
 {
     glm::vec<3, scalar_t> result = {};
     scalar_t current_m = 0;

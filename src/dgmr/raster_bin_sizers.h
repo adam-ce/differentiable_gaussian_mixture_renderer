@@ -73,7 +73,7 @@ struct RasterBinSizer_1 {
         const auto g_end_position = centre + sd * config::gaussian_relevance_sigma;
         if (g_end_position < 0)
             return;
-        const auto alpha = stroke::min(0.99f, opacity * gaussian::integrate_SD(centre, sd, { 0, g_end_position }));
+        const auto alpha = stroke::min(0.99f, opacity * gaussian::integrate_normalised_SD(centre, sd, { 0, g_end_position }));
         add_opacity(g_end_position, alpha);
     }
     STROKE_DEVICES_INLINE void finalise()
@@ -179,7 +179,7 @@ public:
         assert(!stroke::isnan(sd));
         assert(sd > 0);
 
-        const auto alpha = stroke::min(0.999f, opacity * gaussian::integrate_SD(centre, sd, { 0, centre + sd * config::gaussian_relevance_sigma }));
+        const auto alpha = stroke::min(0.999f, opacity * gaussian::integrate_normalised_SD(centre, sd, { 0, centre + sd * config::gaussian_relevance_sigma }));
         assert(!stroke::isnan(alpha));
 
         transmission *= 1 - alpha;
