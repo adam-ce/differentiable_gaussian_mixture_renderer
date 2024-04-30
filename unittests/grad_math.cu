@@ -357,6 +357,33 @@ void check_larger2()
     }
 }
 
+void check_smaller2()
+{
+    using scalar_t = double;
+    using vec2_t = glm::vec<2, scalar_t>;
+    using vec3_t = glm::vec<3, scalar_t>;
+
+    whack::random::HostGenerator<scalar_t> rnd;
+
+    for (int i = 0; i < 10; ++i) {
+        const auto fun = [](const whack::Tensor<scalar_t, 1>& input) {
+            const auto scales = stroke::extract<vec3_t>(input);
+            const auto i = dgmr::math::smaller2<scalar_t>(scales);
+            return stroke::pack_tensor<scalar_t>(i);
+        };
+
+        const auto fun_grad = [](const whack::Tensor<scalar_t, 1>& input, const whack::Tensor<scalar_t, 1>& grad_output) {
+            const auto scales = stroke::extract<vec3_t>(input);
+            const auto grad_incoming = stroke::extract<vec2_t>(grad_output);
+            const auto grad_outgoing = grad::smaller2<scalar_t>(scales, grad_incoming);
+            return stroke::pack_tensor<scalar_t>(grad_outgoing);
+        };
+
+        const auto test_data = stroke::pack_tensor<scalar_t>(vec3_t(rnd.uniform(), rnd.uniform(), rnd.uniform()));
+        stroke::check_gradient(fun, fun_grad, test_data, scalar_t(0.000001));
+    }
+}
+
 } // namespace
 
 TEST_CASE("dgmr splat gradient (formulation: Opacity, filter kernel size: 0)")
@@ -379,6 +406,10 @@ TEST_CASE("dgmr splat gradient (formulation: Opacity, filter kernel size: 0.3)")
 {
     check_splat<dgmr::Formulation::Opacity>(0.3);
 }
+TEST_CASE("dgmr splat gradient (formulation: Ols, filter kernel size: 0)")
+{
+    check_splat<dgmr::Formulation::Ols>(0);
+}
 TEST_CASE("dgmr splat gradient (formulation: Mass, filter kernel size: 0.3)")
 {
     check_splat<dgmr::Formulation::Mass>(0.3);
@@ -390,6 +421,10 @@ TEST_CASE("dgmr splat gradient (formulation: Density, filter kernel size: 0.3)")
 TEST_CASE("dgmr splat gradient (formulation: Ots, filter kernel size: 0.3)")
 {
     check_splat<dgmr::Formulation::Ots>(0.3);
+}
+TEST_CASE("dgmr splat gradient (formulation: Ols, filter kernel size: 0.3)")
+{
+    check_splat<dgmr::Formulation::Ols>(0.3);
 }
 
 // TEST_CASE("dgmr splat gradient (cached, with orientation dependence, filter kernel size 0)")
@@ -449,4 +484,9 @@ TEST_CASE("dgmr integrate_exponential gradient")
 TEST_CASE("dgmr larger2 gradient")
 {
     check_larger2();
+}
+
+TEST_CASE("dgmr smaller2 gradient")
+{
+    check_smaller2();
 }
