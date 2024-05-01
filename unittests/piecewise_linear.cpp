@@ -42,7 +42,7 @@ TEST_CASE("dgmr piecewise_linear function group")
     CHECK(glm::ivec4(fun.sample(3.0) * 1000.0) == glm::ivec4(glm::dvec4(0.1, 0.2, 1.50, 0.6) * 1000.0));
 }
 
-TEST_CASE("dgmr piecewise_linear function fitting")
+TEST_CASE("dgmr piecewise_linear function fitting 1")
 {
     const auto masses_percent_left = glm::dvec4(0.8, 0.4, 0.5, 0.2);
     const auto masses_total = glm::dvec4(0.3, 0.6, 0.3, 0.8);
@@ -62,23 +62,42 @@ TEST_CASE("dgmr piecewise_linear function fitting")
     CHECK(glm::ivec4(numeric_masses_total * 1000.0) == glm::ivec4(masses_total * 1000.0));
 }
 
+TEST_CASE("dgmr piecewise_linear function fitting 2")
+{
+    const auto masses_percent_left = glm::dvec4(0.5, 0.5, 0.5, 0.5);
+    const auto masses_total = glm::dvec4(0.8, 0.8, 0.8, 0.0);
+    const auto eval_left = glm::dvec4(0.0, 0.0, 0.2, 0.0);
+    const auto eval_right = glm::dvec4(0.0, 0.1, 0.0, 0.0);
+    const auto t_right = 0.8;
+    const auto td = 0.000001;
+    const auto lin_approx = dgmr::piecewise_linear::create_approximation(masses_percent_left, masses_total, eval_left, eval_right, t_right);
+    lin_approx.check();
+
+    CHECK(glm::ivec4(lin_approx.sample(0.0) * 1000.0 + 0.5) == glm::ivec4(eval_left * 1000.0 + 0.5));
+    CHECK(glm::ivec4(lin_approx.sample(t_right) * 1000.0 + 0.5) == glm::ivec4(eval_right * 1000.0 + 0.5));
+    auto numeric_masses_total = glm::dvec4();
+    for (double t = 0; t < t_right; t += td) {
+        numeric_masses_total += lin_approx.sample(t) * td;
+    }
+    CHECK(glm::ivec4(numeric_masses_total * 1000.0 + 0.5) == glm::ivec4(masses_total * 1000.0 + 0.5));
+}
+
 TEST_CASE("dgmr piecewise_linear vol int")
 {
     constexpr auto n_ref_steps = 1000000;
     constexpr auto n_steps_per_bin = 256;
-    constexpr auto gmn = 0.0000001; // minimum eval value. a gm will always eval to something > 0 if there are gaussians at all.
 
     // create 8 bins with piecewise_linear FunctionGroups
     const whack::Array<dgmr::piecewise_linear::FunctionGroup<double>, 8> bins = {
         //                                           masses_percent_left,            masses_total,                   eval_left,                      eval_right,                     t_right
-        dgmr::piecewise_linear::create_approximation(glm::dvec4(0.0, 0.0, 0.0, 0.0), glm::dvec4(0.3, 0.6, 0.3, 0.6), glm::dvec4(gmn, gmn, gmn, gmn), glm::dvec4(0.2, 0.1, gmn, 0.1), 0.8),
-        dgmr::piecewise_linear::create_approximation(glm::dvec4(0.8, 0.4, 0.5, 0.3), glm::dvec4(0.5, 0.4, 0.8, 0.2), glm::dvec4(0.2, 0.1, gmn, 0.1), glm::dvec4(0.4, 0.7, 0.2, 0.9), 0.5),
+        dgmr::piecewise_linear::create_approximation(glm::dvec4(0.0, 0.0, 0.0, 0.0), glm::dvec4(0.3, 0.6, 0.3, 0.6), glm::dvec4(0.0, 0.0, 0.0, 0.0), glm::dvec4(0.2, 0.1, 0.0, 0.1), 0.8),
+        dgmr::piecewise_linear::create_approximation(glm::dvec4(0.8, 0.4, 0.5, 0.3), glm::dvec4(0.5, 0.4, 0.8, 0.2), glm::dvec4(0.2, 0.1, 0.0, 0.1), glm::dvec4(0.4, 0.7, 0.2, 0.9), 0.5),
         dgmr::piecewise_linear::create_approximation(glm::dvec4(0.6, 0.7, 0.1, 0.8), glm::dvec4(0.1, 0.0, 0.1, 0.1), glm::dvec4(0.4, 0.7, 0.2, 0.9), glm::dvec4(0.8, 0.1, 0.8, 0.7), 1.5),
         dgmr::piecewise_linear::create_approximation(glm::dvec4(0.1, 0.8, 0.7, 0.5), glm::dvec4(0.1, 0.2, 0.0, 0.2), glm::dvec4(0.8, 0.1, 0.8, 0.7), glm::dvec4(0.4, 0.7, 0.2, 0.1), 2.5),
         dgmr::piecewise_linear::create_approximation(glm::dvec4(0.5, 0.2, 0.6, 0.3), glm::dvec4(0.5, 0.6, 0.7, 0.7), glm::dvec4(0.4, 0.7, 0.2, 0.1), glm::dvec4(0.4, 0.7, 0.2, 0.2), 0.5),
         dgmr::piecewise_linear::create_approximation(glm::dvec4(0.7, 0.8, 0.2, 0.5), glm::dvec4(0.5, 0.2, 0.3, 0.5), glm::dvec4(0.4, 0.7, 0.2, 0.2), glm::dvec4(0.4, 0.7, 0.2, 1.9), 0.8),
         dgmr::piecewise_linear::create_approximation(glm::dvec4(0.8, 0.4, 0.8, 0.2), glm::dvec4(0.3, 1.6, 1.3, 1.9), glm::dvec4(0.4, 0.7, 0.2, 1.9), glm::dvec4(0.4, 0.7, 0.2, 0.5), 0.1),
-        dgmr::piecewise_linear::create_approximation(glm::dvec4(0.1, 0.1, 0.4, 0.9), glm::dvec4(0.8, 0.7, 0.3, 2.4), glm::dvec4(0.4, 0.7, 0.2, 0.5), glm::dvec4(0.2, 0.1, gmn, 0.1), 1.2),
+        dgmr::piecewise_linear::create_approximation(glm::dvec4(0.1, 0.1, 0.4, 0.9), glm::dvec4(0.8, 0.7, 0.3, 2.4), glm::dvec4(0.4, 0.7, 0.2, 0.5), glm::dvec4(0.2, 0.1, 0.0, 0.1), 1.2),
     };
 
     double max_t = 0;

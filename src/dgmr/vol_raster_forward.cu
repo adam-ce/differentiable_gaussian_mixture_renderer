@@ -26,6 +26,7 @@
 #include "vol_raster_forward.h"
 
 #include <stroke/gaussian.h>
+#include <stroke/linalg.h>
 #include <whack/Tensor.h>
 #include <whack/kernel.h>
 
@@ -373,8 +374,8 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                 __shared__ glm::vec3 collected_centroid[render_block_size];
                 __shared__ stroke::Cov3<float> collected_inv_cov3[render_block_size];
 
-                whack::Array<glm::vec4, vol_raster::config::n_rasterisation_steps> bin_mass = {};
-                whack::Array<glm::vec4, vol_raster::config::n_rasterisation_steps + 1> bin_eval = {};
+                whack::Array<glm::vec4, vol_raster::config::n_rasterisation_bins> bin_mass = {};
+                whack::Array<glm::vec4, vol_raster::config::n_rasterisation_bins + 1> bin_eval = {};
                 math::RasterBinSizer<vol_raster::config> rasterisation_bin_sizer;
 
                 // Iterate over batches until all done or range is complete: compute max depth
@@ -469,7 +470,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                         //     continue;
 
                         auto cdf_start = gaussian::cdf_inv_SD(centroid, inv_sd, 0.f);
-                        for (auto k = 0u; k < vol_raster::config::n_rasterisation_steps; ++k) {
+                        for (auto k = 0u; k < vol_raster::config::n_rasterisation_bins; ++k) {
                             const auto cdf_end = gaussian::cdf_inv_SD(centroid, inv_sd, rasterisation_bin_sizer.end_of(k));
                             const auto mass = (cdf_end - cdf_start) * weight;
                             cdf_start = cdf_end;
@@ -478,8 +479,8 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                             const auto eval = weight * gaussian::eval_exponential(centroid, variance, rasterisation_bin_sizer.begin_of(k));
                             bin_eval[k] += glm::vec4(g_rgb(collected_id[j]) * eval, eval);
                         }
-                        const auto eval = weight * gaussian::eval_exponential(centroid, variance, rasterisation_bin_sizer.end_of(vol_raster::config::n_rasterisation_steps - 1));
-                        bin_eval[vol_raster::config::n_rasterisation_steps] += glm::vec4(g_rgb(collected_id[j]) * eval, eval);
+                        const auto eval = weight * gaussian::eval_exponential(centroid, variance, rasterisation_bin_sizer.end_of(vol_raster::config::n_rasterisation_bins - 1));
+                        bin_eval[vol_raster::config::n_rasterisation_bins] += glm::vec4(g_rgb(collected_id[j]) * eval, eval);
 
                         // terminates too early when an intense gaussian is ordered behind many less intense ones, but its location is in front
                         // it does produce artefacts, e.g. onion rings in the hohe veitsch scene.
@@ -493,8 +494,6 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                     }
                 }
 
-                constexpr auto n_steps_per_bin = 1024;
-
                 // blend
                 float T = 1.0f;
                 glm::vec3 C = glm::vec3(0);
@@ -504,7 +503,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                     glm::vec<3, float> result = {};
                     // float current_m = 0;
                     float current_transparency = 1;
-                    for (auto k = 0u; k < vol_raster::config::n_rasterisation_steps; ++k) {
+                    for (auto k = 0u; k < vol_raster::config::n_rasterisation_bins; ++k) {
                         // auto current_bin = rasterised_data[k];
                         // for (auto i = 0; i < 3; ++i) {
                         //     current_bin[i] /= current_bin[3] + 0.001f; // make an weighted average out of a weighted sum
@@ -528,11 +527,27 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                         const auto t_right = rasterisation_bin_sizer.end_of(k) - rasterisation_bin_sizer.begin_of(k);
                         if (t_right <= 0)
                             continue;
-                        const auto f = dgmr::piecewise_linear::create_approximation(glm::vec4(0.5, 0.5, 0.5, 0.5), bin_mass[k], bin_eval[k], bin_eval[k + 1], t_right);
+                        auto percent_left = glm::vec4(rasterisation_bin_sizer.border_mass_begin_of(k) / (rasterisation_bin_sizer.border_mass_begin_of(k) + rasterisation_bin_sizer.border_mass_begin_of(k)));
+                        if (stroke::isnan(percent_left.w)) {
+                            percent_left = glm::vec4(0.5f);
+                        }
+                        if (k > 0 && k < vol_raster::config::n_rasterisation_bins - 1) {
+                            assert(percent_left.x == percent_left.y);
+                            assert(percent_left.x == percent_left.z);
+                            assert(percent_left.x == percent_left.w);
+                        }
+                        // if (k == 0 || k == vol_raster::config::n_rasterisation_steps - 1)
+                        //     percent_left = bin_eval[k] / (bin_eval[k] + bin_eval[k + 1]);
+                        // if (isnan(percent_left)) {
+                        //     percent_left = glm::vec4(0.5f);
+                        // }
+                        // const auto percent_left = (bin_eval[k] / (bin_eval[k] + bin_eval[k + 1]));
+                        // const auto percent_left = glm::vec4(0.5f, 0.5f, 0.5f, 0.5f);
+                        const auto f = dgmr::piecewise_linear::create_approximation(percent_left, bin_mass[k], bin_eval[k], bin_eval[k + 1], t_right);
 
-                        const auto delta_t = f.t_right / n_steps_per_bin;
+                        const auto delta_t = f.t_right / vol_raster::config::n_steps_per_bin;
                         float t = delta_t / 2;
-                        for (unsigned i = 0; i < n_steps_per_bin; ++i) {
+                        for (unsigned i = 0; i < vol_raster::config::n_steps_per_bin; ++i) {
                             assert(t < f.t_right);
                             const auto eval_t = f.sample(t);
                             // result += glm::dvec3(eval_t) * stroke::exp(-current_m) * delta_t;
@@ -559,7 +574,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                     break;
                 }
                 case VolRasterForwardData::RenderMode::Depth: {
-                    const auto bin = stroke::min(unsigned(data.debug_render_bin), config::n_rasterisation_steps - 1);
+                    const auto bin = stroke::min(unsigned(data.debug_render_bin), config::n_rasterisation_bins - 1);
                     const auto distance = rasterisation_bin_sizer.end_of(bin);
                     C = glm::vec3(distance / data.max_depth);
                     if (distance == 0)

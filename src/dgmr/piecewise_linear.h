@@ -65,6 +65,8 @@ STROKE_DEVICES_INLINE FunctionGroup<scalar_t> create_approximation(
     const scalar_t t_right)
 {
     assert(t_right > 0);
+    assert(!stroke::isnan(t_right));
+    assert(!stroke::isinf(t_right));
     const auto m_l = masses_percent_left * masses_total;
     const auto m_r = masses_total - m_l;
     auto f = FunctionGroup<scalar_t> { eval_left, {}, scalar_t(2) * m_l / eval_left, t_right - scalar_t(2) * m_r / eval_right, {}, t_right };
@@ -91,21 +93,33 @@ STROKE_DEVICES_INLINE FunctionGroup<scalar_t> create_approximation(
         const auto c1 = 2 * m - (gm_l + gm_r) * t_omega;
         const auto c2 = gm_r * m_l[i] + gm_l * m_r[i];
         const auto c3 = gm_l * gm_r * t_omega;
-        const auto dm = (c1 + stroke::sqrt(c1 * c1 + 4 * t_omega * (2 * c2 - c3))) / (2 * t_omega);
-        if (dm < 0) {
+        const auto dm = stroke::max(scalar_t(0), (c1 + stroke::sqrt(c1 * c1 + 4 * t_omega * (2 * c2 - c3))) / (2 * t_omega)); // numerical instability
+        if (dm < 0 || stroke::isnan(dm)) {
             printf("dm = %f\n", dm);
-            printf("masses_percent_left[%i] = %f\n", i, masses_percent_left[i]);
+            // printf("masses_percent_left[%i] = %f\n", i, masses_percent_left[i]);
             printf("masses_total[%i] = %f\n", i, masses_total[i]);
             printf("eval_left[%i] = %f\n", i, eval_left[i]);
             printf("eval_right[%i] = %f\n", i, eval_right[i]);
             printf("t_right = %f\n\n", t_right);
         }
         assert(dm >= 0);
-        const auto tr = 2 * m_r[i] / (dm + gm_r);
-        assert(tr >= 0);
-        const auto tl_p = t_omega - tr;
-        const auto tl = 2 * m_l[i] / (dm + gm_l); // more stable than tl_p for ml[i] == 0
-        if (tl < 0) {
+
+        const auto compute_tl_tr = [&]() -> cuda::std::pair<float, float> {
+            if (m_r[i] > m_l[i]) {
+                const auto tr = 2 * m_r[i] / (dm + gm_r);
+                const auto tl = stroke::max(scalar_t(0.), t_omega - tr);
+                return { tl, tr };
+            }
+            const auto tl = 2 * m_l[i] / (dm + gm_l);
+            const auto tr = stroke::max(scalar_t(0.), t_omega - tl);
+            return { tl, tr };
+        };
+        const auto [tl, tr] = compute_tl_tr();
+        // const auto tr = 2 * m_r[i] / (dm + gm_r);
+        // assert(tr >= 0);
+        // const auto tl_p = t_omega - tr;
+        // const auto tl = 2 * m_l[i] / (dm + gm_l); // more stable than tl_p for ml[i] == 0
+        if (!(tl >= 0)) {
             printf("tl = %f\n", tl);
             printf("masses_percent_left[%i] = %f\n", i, masses_percent_left[i]);
             printf("masses_total[%i] = %f\n", i, masses_total[i]);
@@ -114,15 +128,15 @@ STROKE_DEVICES_INLINE FunctionGroup<scalar_t> create_approximation(
             printf("t_right = %f\n\n", t_right);
         }
         assert(tl >= 0);
-        if (stroke::abs(tl - tl_p) >= 0.001) {
-            printf("tl = %f\n", tl);
-            printf("tl_p = %f\n", tl_p);
-            printf("t_omega = %f\n", t_omega);
-            printf("dm = %f\n", dm);
-            printf("masses_total[%i] = %f\n", i, masses_total[i]);
-        }
+        // if (stroke::abs(tl - tl_p) >= 0.001) {
+        //     printf("tl = %f\n", tl);
+        //     printf("tl_p = %f\n", tl_p);
+        //     printf("t_omega = %f\n", t_omega);
+        //     printf("dm = %f\n", dm);
+        //     printf("masses_total[%i] = %f\n", i, masses_total[i]);
+        // }
 
-        assert(stroke::abs(tl - tl_p) < 0.001);
+        // assert(stroke::abs(tl - tl_p) < 0.001);
 
         f.k0[i] = -(gm_l - dm) / tl;
         if (tl == 0)

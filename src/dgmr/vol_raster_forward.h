@@ -64,7 +64,8 @@ struct VolRasterForwardData {
 namespace vol_raster {
     struct config {
         static constexpr float filter_kernel_SD = 0.55f;
-        static constexpr unsigned n_rasterisation_steps = 16;
+        static constexpr unsigned n_rasterisation_bins = 32;
+        static constexpr auto n_steps_per_bin = 256;
         static constexpr float transmission_threshold = 0.001f;
         static constexpr float gaussian_relevance_sigma = 3.f;
         static constexpr float workaround_variance_add_along_ray = 0.000f; // reduces artefacts in small details?

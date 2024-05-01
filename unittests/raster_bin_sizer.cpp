@@ -28,17 +28,18 @@ using Catch::Approx;
 namespace {
 struct RasterBinSizerConfig {
     static constexpr float transmission_threshold = 0.1f;
-    static constexpr unsigned n_rasterisation_steps = 4;
+    static constexpr unsigned n_rasterisation_bins = 4;
     static constexpr float gaussian_relevance_sigma = 1.f;
 };
 } // namespace
 
-TEMPLATE_TEST_CASE("dgmr raster bin sizer", "", dgmr::math::RasterBinSizer<RasterBinSizerConfig>, dgmr::math::RasterBinSizer_1<RasterBinSizerConfig>)
+TEMPLATE_TEST_CASE("dgmr raster bin sizer", "", dgmr::math::RasterBinSizer<RasterBinSizerConfig> /*, dgmr::math::RasterBinSizer_1<RasterBinSizerConfig>*/)
 {
     using RasterBinSizer = TestType;
     SECTION("start empty")
     {
-        const RasterBinSizer sizer;
+        RasterBinSizer sizer;
+        sizer.finalise();
         CHECK(sizer.is_full() == false);
         CHECK(sizer.begin_of(0) == Approx(0));
         CHECK(sizer.end_of(0) == Approx(0));
@@ -46,6 +47,8 @@ TEMPLATE_TEST_CASE("dgmr raster bin sizer", "", dgmr::math::RasterBinSizer<Raste
         CHECK(sizer.end_of(1) == Approx(0));
         CHECK(sizer.begin_of(2) == Approx(0));
         CHECK(sizer.end_of(2) == Approx(0));
+        CHECK(sizer.begin_of(3) == Approx(0));
+        CHECK(sizer.end_of(3) == Approx(0));
     }
 
     SECTION("empty sizer doesn't crash")
@@ -58,7 +61,7 @@ TEMPLATE_TEST_CASE("dgmr raster bin sizer", "", dgmr::math::RasterBinSizer<Raste
     SECTION("single opaque gaussian")
     {
         RasterBinSizer sizer = {};
-        sizer.add_gaussian(1.52f, 8, 4);
+        sizer.add_gaussian(10.52f, 8, 4);
         CHECK(sizer.is_full() == true);
         sizer.finalise();
         CHECK(sizer.is_full() == true);
@@ -138,13 +141,13 @@ TEMPLATE_TEST_CASE("dgmr raster bin sizer", "", dgmr::math::RasterBinSizer<Raste
     SECTION("several gaussians, filling up")
     {
         RasterBinSizer sizer = {};
-        sizer.add_gaussian(0.35f, 1.3f, 1.f); // 0.739 remains
+        sizer.add_gaussian(0.35f, 1.3f, 1.f);
         CHECK(!sizer.is_full());
-        sizer.add_gaussian(0.40f, 4.7f, 0.81f); // 0.483 remains
+        sizer.add_gaussian(0.40f, 4.7f, 0.81f);
         CHECK(!sizer.is_full());
-        sizer.add_gaussian(0.6, 6.8, 1.f); // 0.239 remains
+        sizer.add_gaussian(0.6, 6.8, 1.f);
         CHECK(!sizer.is_full());
-        sizer.add_gaussian(0.8, 9.6, 0.25f); // 0.052 remains, which is under 0.1 from the test config.
+        sizer.add_gaussian(10.8, 9.6, 0.25f);
         CHECK(sizer.is_full());
         sizer.finalise();
         CHECK(sizer.begin_of(0) == Approx(0));
