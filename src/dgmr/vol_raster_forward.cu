@@ -155,8 +155,8 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
     auto g_inverse_filtered_cov3d_data = whack::make_tensor<stroke::Cov3<float>>(whack::Location::Device, n_gaussians);
     auto g_inverse_filtered_cov3d = g_inverse_filtered_cov3d_data.view();
 
-    auto g_filtered_weights_data = whack::make_tensor<float>(whack::Location::Device, n_gaussians);
-    auto g_density = g_filtered_weights_data.view();
+    auto g_filtered_masses_data = whack::make_tensor<float>(whack::Location::Device, n_gaussians);
+    auto g_filtered_masses = g_filtered_masses_data.view();
 
     auto g_tiles_touched_data = whack::make_tensor<uint32_t>(whack::Location::Device, n_gaussians);
     auto g_tiles_touched = g_tiles_touched_data.view();
@@ -197,7 +197,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                 const auto filter_kernel = math::orient_filter_kernel<float>({ .direction = glm::normalize(data.cam_poition - centroid), .kernel_scales = { filter_kernel_size, filter_kernel_size, 0 } });
 
                 const auto [filtered_cov_3d, aa_weight_factor] = math::convolve_unnormalised_with_normalised(cov3d, filter_kernel);
-                g_density(idx) = math::weight_to_density<vol_raster::config::gaussian_mixture_formulation>(weights, scales) * aa_weight_factor * gaussian::integrate_exponential(cov3d); // inaccuracy due to filtering
+                g_filtered_masses(idx) = math::weight_to_density<vol_raster::config::gaussian_mixture_formulation>(weights, scales) * aa_weight_factor * gaussian::integrate_exponential(cov3d); // inaccuracy due to filtering
 
                 // using the more aggressive computation for calculating overlapping tiles:
                 {
@@ -370,7 +370,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
 
                 // Allocate storage for batches of collectively fetched data.
                 __shared__ int collected_id[render_block_size];
-                __shared__ float collected_density[render_block_size];
+                __shared__ float collected_3d_masses[render_block_size];
                 __shared__ glm::vec3 collected_centroid[render_block_size];
                 __shared__ stroke::Cov3<float> collected_inv_cov3[render_block_size];
 
@@ -393,7 +393,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                         collected_id[thread_rank] = coll_id;
                         collected_centroid[thread_rank] = data.gm_centroids(coll_id);
                         collected_inv_cov3[thread_rank] = g_inverse_filtered_cov3d(coll_id);
-                        collected_density[thread_rank] = g_density(coll_id);
+                        collected_3d_masses[thread_rank] = g_filtered_masses(coll_id);
                     }
                     __syncthreads();
 
@@ -403,15 +403,15 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                     // Iterate over current batch
                     for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
                         const auto gaussian1d = gaussian::intersect_with_ray_inv_C(collected_centroid[j], collected_inv_cov3[j], ray);
-                        auto density = gaussian1d.weight * collected_density[j];
+                        auto mass_on_ray = gaussian1d.weight * collected_3d_masses[j];
                         // if (vol_raster::config::use_orientation_dependent_gaussian_density)
                         // weight *= gaussian::norm_factor(gaussian1d.C) / gaussian::norm_factor_inv_C(collected_inv_cov3[j]);
 
-                        if (density < 0.0001 || density > 1'000)
+                        if (mass_on_ray < 0.001 || mass_on_ray > 1'000)
                             continue;
                         if (gaussian1d.C + vol_raster::config::workaround_variance_add_along_ray <= 0)
                             continue;
-                        rasterisation_bin_sizer.add_gaussian(density, gaussian1d.centre, stroke::sqrt(gaussian1d.C + vol_raster::config::workaround_variance_add_along_ray));
+                        rasterisation_bin_sizer.add_gaussian(mass_on_ray, gaussian1d.centre, stroke::sqrt(gaussian1d.C + vol_raster::config::workaround_variance_add_along_ray));
                         if (rasterisation_bin_sizer.is_full()) {
                             done = true;
                             break;
@@ -441,7 +441,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                         collected_id[thread_rank] = coll_id;
                         collected_centroid[thread_rank] = data.gm_centroids(coll_id);
                         collected_inv_cov3[thread_rank] = g_inverse_filtered_cov3d(coll_id);
-                        collected_density[thread_rank] = g_density(coll_id);
+                        collected_3d_masses[thread_rank] = g_filtered_masses(coll_id);
                     }
                     // block.sync();
                     __syncthreads();
@@ -455,8 +455,9 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                         const auto gaussian1d = gaussian::intersect_with_ray_inv_C(collected_centroid[j], inv_cov, ray);
                         const auto centroid = gaussian1d.centre;
                         const auto variance = gaussian1d.C + vol_raster::config::workaround_variance_add_along_ray;
-                        const auto inv_sd = 1 / stroke::sqrt(variance);
-                        auto weight = gaussian1d.weight * collected_density[j];
+                        const auto sd = stroke::sqrt(variance);
+                        const auto inv_sd = 1 / sd;
+                        auto weight = gaussian1d.weight * collected_3d_masses[j];
                         // if (vol_raster::config::use_orientation_dependent_gaussian_density)
                         // weight *= gaussian::norm_factor(gaussian1d.C) / gaussian::norm_factor_inv_C(collected_inv_cov3[j]);
 
@@ -466,8 +467,9 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                             printf("weight: %f, gaussian1d.C: %f, collected_cov3[j]: %f/%f/%f/%f/%f/%f, det: %f\n", weight, variance, inv_cov[0], inv_cov[1], inv_cov[2], inv_cov[3], inv_cov[4], inv_cov[5], det(inv_cov));
                             //							printf("weight: %f, gaussian1d.weight: %f, collected_weight[j]: %f, stroke::gaussian::norm_factor(gaussian1d.C): %f, gaussian1d.C: %f\n", weight, gaussian1d.weight, collected_weight[j], stroke::gaussian::norm_factor(gaussian1d.C), gaussian1d.C);
                         }
-                        // if (weight * gaussian::integrate_inv_SD(centroid, inv_sd, { 0, rasterisation_bin_sizer.max_distance() }) <= 0.001f) // performance critical
-                        //     continue;
+                        if (weight * gaussian::integrate_normalised_inv_SD(centroid, inv_sd, { 0, rasterisation_bin_sizer.max_distance() }) <= 0.001f) { // performance critical
+                            continue;
+                        }
 
                         auto cdf_start = gaussian::cdf_inv_SD(centroid, inv_sd, 0.f);
                         for (auto k = 0u; k < vol_raster::config::n_rasterisation_bins; ++k) {
