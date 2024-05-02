@@ -301,10 +301,12 @@ public:
     {
         if (i == n_bins - 1)
             return max_depth;
+#ifndef NDEBUG
         if (!(borders[i] <= borders[i + 1])) {
             printf("borders[%i] = %f\n", i, borders[i]);
             printf("borders[%i+ 1] = %f\n", i, borders[i + 1]);
         }
+#endif
         assert(borders[i] <= borders[i + 1]);
         return borders[i];
     }
@@ -384,20 +386,11 @@ public:
             const auto scaled_m_a = transparency_before(a) * masses[a];
             const auto scaled_m_b = transparency_before(b) * masses[b];
             const auto percentage_a = (scaled_m_a + scaled_m_b >= 0.0000001f) ? stroke::min(scaled_m_a / (scaled_m_a + scaled_m_b), 0.999999f) : 0.5f;
-
             // const auto percentage_a = masses[a] / (masses[a] + masses[b]);
+
             const auto percentage_b = 1 - percentage_a;
 
-            // if (!(scaled_m_a / (scaled_m_a + scaled_m_b) >= 0.f && scaled_m_a / (scaled_m_a + scaled_m_b) <= 1.000001f)) {
-            //     printf("percentage_a = %f\n", scaled_m_a / (scaled_m_a + scaled_m_b));
-            //     printf("a=%i, b=%i\n", a, b);
-            //     printf("transparency_before(a) = %f\n", transparency_before(a));
-            //     printf("masses[a] = %f\n", masses[a]);
-            //     printf("transparency_before(b) = %f\n", transparency_before(b));
-            //     printf("masses[b] = %f\n", masses[b]);
-            // }
             assert(percentage_a >= 0.f);
-            // assert(scaled_m_a / (scaled_m_a + scaled_m_b) <= 1.000001f);
             assert(percentage_b >= 0.f);
             assert(percentage_b <= 1.0000001f);
 
@@ -439,17 +432,6 @@ public:
                 if (val < best_idx_val) {
                     best_idx_val = val;
                     best_idx = j;
-                }
-            }
-            if (best_idx < 0) {
-                // printf("best_idx_val: %f\n", best_idx_val);
-
-                for (int j = 0; j < n_bins - 1; ++j) {
-                    printf("borders(%i): %f\n", j, borders[j]);
-                    printf("SDs(%i): %f\n", j, SDs[j]);
-                    printf("transparencies(%i): %f\n", j, transparencies[j]);
-
-                    printf("cost(%i): %f\n", j, cost(j));
                 }
             }
             assert(best_idx >= 0);
