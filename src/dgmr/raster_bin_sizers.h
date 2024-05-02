@@ -275,7 +275,10 @@ class RasterBinSizer {
     whack::Array<float, n_bins> masses = {};
     whack::Array<float, n_bins> borders = {};
     whack::Array<float, n_bins> SDs = {};
-    whack::Array<float, n_bins> transparencies = {};
+    // whack::Array<float, n_bins> transparencies = {};
+    // whack::Array<unsigned char, n_bins> sorted_indices = {};
+    // static_assert(n_bins <= 256);
+
     float accumulated_mass = 0.f;
     float max_depth = 0.f;
 
@@ -285,9 +288,9 @@ public:
         for (float& b : borders) {
             b = 1.f / 0.f;
         }
-        for (float& t : transparencies) {
-            t = 1.f;
-        }
+        // for (float& t : transparencies) {
+        //     t = 1.f;
+        // }
     }
 
     STROKE_DEVICES_INLINE float begin_of(unsigned i) const
@@ -365,12 +368,18 @@ public:
                 stroke::swap(masses[i - 1], masses[i]);
                 continue;
             }
-            auto transparency = (i == 0) ? 1.f : transparencies[i - 1];
-            for (; i < last_bin; ++i) {
-                transparency *= stroke::exp(-masses[i]);
-                transparencies[i] = transparency;
-            }
+            // auto transparency = (i == 0) ? 1.f : transparencies[i - 1];
+            // for (; i < last_bin; ++i) {
+            //     transparency *= stroke::exp(-masses[i]);
+            //     transparencies[i] = transparency;
+            // }
             break;
+        }
+        whack::Array<float, n_bins> transparencies = {};
+        auto transparency = 1.f;
+        for (unsigned i = 0; i < last_bin; ++i) {
+            transparency *= stroke::exp(-masses[i]);
+            transparencies[i] = transparency;
         }
 
         const auto transparency_before = [&](int index) {
@@ -443,19 +452,19 @@ public:
             masses[best_idx] = m.weight;
             SDs[best_idx] = m.C;
 
-            auto transparency = transparency_before(best_idx);
-            transparency *= stroke::exp(-masses[best_idx]);
-            transparencies[best_idx] = transparency;
+            // auto transparency = transparency_before(best_idx);
+            // transparency *= stroke::exp(-masses[best_idx]);
+            // transparencies[best_idx] = transparency;
 
             for (unsigned j = best_idx + 1; j < n_bins - 1; ++j) {
                 borders[j] = borders[j + 1];
                 masses[j] = masses[j + 1];
                 SDs[j] = SDs[j + 1];
-                transparency *= stroke::exp(-masses[j]);
-                transparencies[j] = transparency;
+                // transparency *= stroke::exp(-masses[j]);
+                // transparencies[j] = transparency;
             }
-            transparency *= stroke::exp(-masses[n_bins - 1]);
-            transparencies[n_bins - 1] = transparency;
+            // transparency *= stroke::exp(-masses[n_bins - 1]);
+            // transparencies[n_bins - 1] = transparency;
         }
     }
     STROKE_DEVICES_INLINE void finalise()
