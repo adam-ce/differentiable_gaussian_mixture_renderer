@@ -249,6 +249,31 @@ STROKE_DEVICES_INLINE scalar_t weight_to_density(scalar_t weight, const glm::vec
 }
 
 template <Formulation formulation, typename scalar_t>
+STROKE_DEVICES_INLINE scalar_t weight_to_mass(scalar_t weight, const glm::vec<3, scalar_t>& cov3d_scale)
+{
+    switch (formulation) {
+    case Formulation::Opacity: {
+        assert(false);
+        return 0;
+    }
+    case Formulation::Mass: {
+        return weight;
+    }
+    case Formulation::Density: {
+        return weight;
+    }
+    case Formulation::Ots: {
+        const auto i2prime = math::integrate_exponential(larger2(cov3d_scale));
+        return weight * i2prime;
+    }
+    case Formulation::Ols: {
+        const auto i2prime = math::integrate_exponential(smaller2(cov3d_scale));
+        return weight * i2prime;
+    }
+    }
+}
+
+template <Formulation formulation, typename scalar_t>
 STROKE_DEVICES_INLINE Gaussian2d<scalar_t> splat(
     scalar_t weight,
     const glm::vec<3, scalar_t>& centroid,
