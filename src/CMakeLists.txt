@@ -36,6 +36,7 @@ endif()
 add_library(differentiable_gaussian_mixture_renderer
 	dgmr/splat_forward.h	dgmr/splat_forward.cu
     dgmr/vol_raster_forward.h	dgmr/vol_raster_forward.cu
+    dgmr/vol_marcher.h      dgmr/vol_marcher.cu
 	dgmr/constants.h
     dgmr/math.h    dgmr/grad/math.h
     dgmr/piecewise_linear.h

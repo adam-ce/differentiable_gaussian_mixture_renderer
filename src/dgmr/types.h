@@ -18,6 +18,9 @@
 
 #pragma once
 
+#include <stroke/linalg.h>
+#include <whack/array.h>
+
 namespace dgmr {
 
 enum class Formulation : int {
@@ -27,4 +30,7 @@ enum class Formulation : int {
     Ots, // Opacity thin side, view dependent, but scaled between 0 and 1 for the shortest axis of the gaussian
     Ols // Opacity long side, view dependent, but scaled between 0 and 1 for the longest axis of the gaussian
 };
+
+template <int D>
+using SHs = whack::Array<glm::vec3, (D + 1) * (D + 1)>;
 }

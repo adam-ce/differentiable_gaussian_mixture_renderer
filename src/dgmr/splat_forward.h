@@ -18,9 +18,7 @@
 
 #pragma once
 
-#include <stroke/linalg.h>
 #include <whack/TensorView.h>
-#include <whack/array.h>
 
 #include "types.h"
 
@@ -29,9 +27,6 @@ namespace dgmr {
 struct Statistics {
     unsigned n_rendered = 0;
 };
-
-template <int D>
-using SHs = whack::Array<glm::vec3, (D + 1) * (D + 1)>;
 
 struct ConicAndOpacity {
     stroke::SymmetricMat<2, float> conic;

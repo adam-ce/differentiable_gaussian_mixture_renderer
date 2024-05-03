@@ -24,11 +24,11 @@
 
 namespace dgmr {
 
-struct VolRasterStatistics {
+struct VolMarcherStatistics {
     unsigned n_rendered = 0;
 };
 
-struct VolRasterForwardData {
+struct VolMarcherForwardData {
     whack::TensorView<const glm::vec3, 1> gm_centroids;
     whack::TensorView<const SHs<3>, 1> gm_sh_params;
     whack::TensorView<const float, 1> gm_weights;
@@ -56,7 +56,7 @@ struct VolRasterForwardData {
     int debug_render_bin = -1;
 };
 
-namespace vol_raster {
+namespace vol_marcher {
     struct config {
         static constexpr float filter_kernel_SD = 0.55f;
         static constexpr unsigned n_rasterisation_bins = 32;
@@ -66,7 +66,7 @@ namespace vol_raster {
         static constexpr float workaround_variance_add_along_ray = 0.000f; // reduces artefacts in small details?
         static constexpr Formulation gaussian_mixture_formulation = Formulation::Ots;
     };
-} // namespace vol_raster
+} // namespace vol_marcher
 
-VolRasterStatistics vol_raster_forward(VolRasterForwardData& forward_data);
+VolMarcherStatistics vol_marcher_forward(VolMarcherForwardData& forward_data);
 } // namespace dgmr

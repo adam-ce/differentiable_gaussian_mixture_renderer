@@ -45,5 +45,4 @@ constexpr auto SH_C3 = whack::Array<float, 7> {
 constexpr unsigned render_block_width = 16;
 constexpr unsigned render_block_height = 16;
 
-
 } // namespace dgmr
