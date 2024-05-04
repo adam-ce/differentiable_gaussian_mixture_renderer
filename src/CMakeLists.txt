@@ -42,6 +42,7 @@ add_library(differentiable_gaussian_mixture_renderer
     dgmr/piecewise_linear.h
     dgmr/raster_bin_sizers.h
     dgmr/types.h
+    dgmr/marching_steps.h
 )
 target_compile_definitions(differentiable_gaussian_mixture_renderer PUBLIC GLM_FORCE_LEFT_HANDED GLM_FORCE_QUAT_DATA_WXYZ)
 target_link_libraries(differentiable_gaussian_mixture_renderer PUBLIC stroke whack PRIVATE torch)

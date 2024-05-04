@@ -59,13 +59,15 @@ struct VolMarcherForwardData {
 namespace vol_marcher {
     struct config {
         static constexpr float filter_kernel_SD = 0.55f;
-        static constexpr unsigned n_rasterisation_bins = 32;
-        static constexpr auto n_steps_per_bin = 256;
+        static constexpr unsigned n_large_steps = 128;
+        static constexpr unsigned n_small_steps = 4;
+        static constexpr unsigned n_quadrature_steps = 8;
         static constexpr float transmission_threshold = 0.005f;
         static constexpr float gaussian_relevance_sigma = 3.f;
         static constexpr float workaround_variance_add_along_ray = 0.000f; // reduces artefacts in small details?
         static constexpr Formulation gaussian_mixture_formulation = Formulation::Ots;
     };
+
 } // namespace vol_marcher
 
 VolMarcherStatistics vol_marcher_forward(VolMarcherForwardData& forward_data);

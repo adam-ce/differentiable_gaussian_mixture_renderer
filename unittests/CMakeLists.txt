@@ -19,6 +19,7 @@ add_executable(dgmr_unittests
     grad_math.cu
     unit_test_utils.h
     piecewise_linear.cpp
+    marching_steps.cpp
 )
 
 target_link_libraries(dgmr_unittests PUBLIC Catch2::Catch2WithMain CUDA::nvToolsExt differentiable_gaussian_mixture_renderer)

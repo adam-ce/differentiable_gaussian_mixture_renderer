@@ -20,6 +20,7 @@
 #include <cub/device/device_radix_sort.cuh>
 
 #include "constants.h"
+#include "marching_steps.h"
 #include "math.h"
 #include "piecewise_linear.h"
 #include "raster_bin_sizers.h"
@@ -195,7 +196,9 @@ dgmr::VolMarcherStatistics dgmr::vol_marcher_forward(VolMarcherForwardData& data
                 // low pass filter to combat aliasing
                 const auto filter_kernel_size = glm::distance(centroid, data.cam_poition) * aa_distance_multiplier;
                 const auto filtered_cov_3d = cov3d + stroke::Cov3_f(filter_kernel_size * filter_kernel_size);
-                g_filtered_masses(idx) = math::weight_to_mass<vol_marcher::config::gaussian_mixture_formulation>(weights, scales + glm::vec3(filter_kernel_size * filter_kernel_size));
+                const auto mass = math::weight_to_mass<vol_marcher::config::gaussian_mixture_formulation>(weights, scales + glm::vec3(filter_kernel_size * filter_kernel_size));
+                if (mass <= 0)
+                    return; // clipped
 
                 // using the more aggressive computation for calculating overlapping tiles:
                 {
@@ -206,7 +209,7 @@ dgmr::VolMarcherStatistics dgmr::vol_marcher_forward(VolMarcherForwardData& data
 
                     const auto tiles_touched = (rect_max.x - rect_min.x) * (rect_max.y - rect_min.y);
                     if (tiles_touched == 0)
-                        return; // serves as clipping (i think)
+                        return; // clipped
                     g_tiles_touched(idx) = tiles_touched;
                     g_points_xy_image(idx) = screen_space_gaussian.centroid;
                 }
@@ -219,6 +222,7 @@ dgmr::VolMarcherStatistics dgmr::vol_marcher_forward(VolMarcherForwardData& data
                 // convert spherical harmonics coefficients to RGB color.
                 g_rgb(idx) = computeColorFromSH(data.sh_degree, centroid, data.cam_poition, data.gm_sh_params(idx), &g_rgb_sh_clamped(idx));
                 g_inverse_filtered_cov3d(idx) = stroke::inverse(filtered_cov_3d);
+                g_filtered_masses(idx) = mass;
             });
     }
 
@@ -372,227 +376,147 @@ dgmr::VolMarcherStatistics dgmr::vol_marcher_forward(VolMarcherForwardData& data
                 __shared__ glm::vec3 collected_centroid[render_block_size];
                 __shared__ stroke::Cov3<float> collected_inv_cov3[render_block_size];
 
-                whack::Array<glm::vec4, vol_marcher::config::n_rasterisation_bins> bin_mass = {};
-                whack::Array<glm::vec4, vol_marcher::config::n_rasterisation_bins + 1> bin_eval = {};
-                math::RasterBinSizer<vol_marcher::config> rasterisation_bin_sizer;
+                bool large_stepping_ongoing = true;
+                float current_large_step_start = 0.f;
+                // float accumulated_mass = 0;
+                static constexpr auto mass_threshold = -gcem::log(config::transmission_threshold);
 
-                // Iterate over batches until all done or range is complete: compute max depth
-                for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {
-                    // End if entire block votes that it is done rasterizing
-                    const int num_done = __syncthreads_count(done);
-                    if (num_done == render_block_size)
-                        break;
+                glm::vec3 current_colour = glm::vec3(0);
+                float current_transparency = 1;
+                float current_mass = 0;
 
-                    // Collectively fetch per-Gaussian data from global to shared
-                    const int progress = i * render_block_size + thread_rank;
-                    if (render_g_range.x + progress < render_g_range.y) {
-                        unsigned coll_id = b_point_list(render_g_range.x + progress);
-                        assert(coll_id < n_gaussians);
-                        collected_id[thread_rank] = coll_id;
-                        collected_centroid[thread_rank] = data.gm_centroids(coll_id);
-                        collected_inv_cov3[thread_rank] = g_inverse_filtered_cov3d(coll_id);
-                        collected_3d_masses[thread_rank] = g_filtered_masses(coll_id);
-                    }
-                    __syncthreads();
-
-                    if (done)
-                        continue;
-
-                    // Iterate over current batch
-                    for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
-                        const auto gaussian1d = gaussian::intersect_with_ray_inv_C(collected_centroid[j], collected_inv_cov3[j], ray);
-                        auto mass_on_ray = gaussian1d.weight * collected_3d_masses[j];
-                        // if (vol_raster::config::use_orientation_dependent_gaussian_density)
-                        // weight *= gaussian::norm_factor(gaussian1d.C) / gaussian::norm_factor_inv_C(collected_inv_cov3[j]);
-
-                        if (mass_on_ray < 0.001 || mass_on_ray > 1'000)
-                            continue;
-                        if (gaussian1d.C + vol_marcher::config::workaround_variance_add_along_ray <= 0)
-                            continue;
-                        rasterisation_bin_sizer.add_gaussian(mass_on_ray, gaussian1d.centre, stroke::sqrt(gaussian1d.C + vol_marcher::config::workaround_variance_add_along_ray));
-                        if (rasterisation_bin_sizer.is_full()) {
-                            // printf("done at %i / %i\n", i * render_block_size + j, render_g_range.y - render_g_range.x);
-                            done = true;
+                while (large_stepping_ongoing) {
+                    // Iterate over all gaussians and take the first config::n_large_steps larger than current_large_step_start
+                    marching_steps::Array<config::n_large_steps> current_large_steps(current_large_step_start);
+                    for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {
+                        // End if entire block votes that it is done rasterizing
+                        const int num_done = __syncthreads_count(done);
+                        if (num_done == render_block_size)
                             break;
+
+                        // Collectively fetch per-Gaussian data from global to shared
+                        const int progress = i * render_block_size + thread_rank;
+                        if (render_g_range.x + progress < render_g_range.y) {
+                            unsigned coll_id = b_point_list(render_g_range.x + progress);
+                            assert(coll_id < n_gaussians);
+                            collected_id[thread_rank] = coll_id;
+                            collected_centroid[thread_rank] = data.gm_centroids(coll_id);
+                            collected_inv_cov3[thread_rank] = g_inverse_filtered_cov3d(coll_id);
+                            collected_3d_masses[thread_rank] = g_filtered_masses(coll_id);
                         }
-                    }
-                }
+                        __syncthreads();
 
-                __syncthreads();
-
-                rasterisation_bin_sizer.finalise();
-                done = !inside;
-                n_toDo = render_g_range.y - render_g_range.x;
-                // float opacity = 1;
-
-                // Iterate over batches until all done or range is complete: rasterise into bins
-                for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {
-                    // End if entire block votes that it is done rasterizing
-                    const int num_done = __syncthreads_count(done);
-                    if (num_done == render_block_size)
-                        break;
-
-                    // Collectively fetch per-Gaussian data from global to shared
-                    const int progress = i * render_block_size + thread_rank;
-                    if (render_g_range.x + progress < render_g_range.y) {
-                        unsigned coll_id = b_point_list(render_g_range.x + progress);
-                        assert(coll_id < n_gaussians);
-                        collected_id[thread_rank] = coll_id;
-                        collected_centroid[thread_rank] = data.gm_centroids(coll_id);
-                        collected_inv_cov3[thread_rank] = g_inverse_filtered_cov3d(coll_id);
-                        collected_3d_masses[thread_rank] = g_filtered_masses(coll_id);
-                    }
-                    // block.sync();
-                    __syncthreads();
-
-                    if (done)
-                        continue;
-
-                    // Iterate over current batch
-                    for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
-                        const auto inv_cov = collected_inv_cov3[j];
-                        const auto gaussian1d = gaussian::intersect_with_ray_inv_C(collected_centroid[j], inv_cov, ray);
-                        const auto centroid = gaussian1d.centre;
-                        const auto variance = gaussian1d.C + vol_marcher::config::workaround_variance_add_along_ray;
-                        const auto sd = stroke::sqrt(variance);
-                        const auto inv_sd = 1 / sd;
-                        auto weight = gaussian1d.weight * collected_3d_masses[j];
-                        // if (vol_raster::config::use_orientation_dependent_gaussian_density)
-                        // weight *= gaussian::norm_factor(gaussian1d.C) / gaussian::norm_factor_inv_C(collected_inv_cov3[j]);
-
-                        if (variance <= 0 || stroke::isnan(variance) || stroke::isnan(weight) || weight > 100'000)
-                            continue; // todo: shouldn't happen any more after implementing AA?
-                        if (!(weight >= 0 && weight < 100'000)) {
-                            printf("weight: %f, gaussian1d.C: %f, collected_cov3[j]: %f/%f/%f/%f/%f/%f, det: %f\n", weight, variance, inv_cov[0], inv_cov[1], inv_cov[2], inv_cov[3], inv_cov[4], inv_cov[5], det(inv_cov));
-                            //							printf("weight: %f, gaussian1d.weight: %f, collected_weight[j]: %f, stroke::gaussian::norm_factor(gaussian1d.C): %f, gaussian1d.C: %f\n", weight, gaussian1d.weight, collected_weight[j], stroke::gaussian::norm_factor(gaussian1d.C), gaussian1d.C);
-                        }
-                        if (weight * gaussian::integrate_normalised_inv_SD(centroid, inv_sd, { 0, rasterisation_bin_sizer.max_distance() }) <= 0.001f) { // performance critical
+                        if (done)
                             continue;
-                        }
 
-                        auto cdf_start = gaussian::cdf_inv_SD(centroid, inv_sd, 0.f);
-                        for (auto k = 0u; k < vol_marcher::config::n_rasterisation_bins; ++k) {
-                            const auto cdf_end = gaussian::cdf_inv_SD(centroid, inv_sd, rasterisation_bin_sizer.end_of(k));
-                            const auto mass = (cdf_end - cdf_start) * weight;
-                            cdf_start = cdf_end;
-                            //                            const auto integrated = weight * gaussian::integrate_inv_SD(centroid, inv_sd, { rasterisation_bin_sizer.begin_of(k), rasterisation_bin_sizer.end_of(k) });
-                            bin_mass[k] += glm::vec4(g_rgb(collected_id[j]) * mass, mass);
-                            const auto eval = weight * gaussian::eval_exponential(centroid, variance, rasterisation_bin_sizer.begin_of(k));
-                            bin_eval[k] += glm::vec4(g_rgb(collected_id[j]) * eval, eval);
-                        }
-                        const auto eval = weight * gaussian::eval_exponential(centroid, variance, rasterisation_bin_sizer.end_of(vol_marcher::config::n_rasterisation_bins - 1));
-                        bin_eval[vol_marcher::config::n_rasterisation_bins] += glm::vec4(g_rgb(collected_id[j]) * eval, eval);
+                        // Iterate over current batch
+                        for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
+                            const auto gaussian1d = gaussian::intersect_with_ray_inv_C(collected_centroid[j], collected_inv_cov3[j], ray);
 
-                        // terminates too early when an intense gaussian is ordered behind many less intense ones, but its location is in front
-                        // it does produce artefacts, e.g. onion rings in the hohe veitsch scene.
-                        // it also gives a performance boost, but only in combination with opacity filtering.
-                        // todo: in the future, we should order using the front side, and stop once we compute front sides behind max_distance.
-                        //                        opacity *= 1 - (cdf_start - gaussian::cdf_inv_C(centroid, inv_variance, 0.f)) * weight; // end - start again, but here cdf_tart refers to the actual end.
-                        //                        if (opacity < 0.0001f) {
-                        //                            done = true;
-                        //                            break;
-                        //                        }
+                            auto mass_on_ray = gaussian1d.weight * collected_3d_masses[j];
+                            if (mass_on_ray < 0.0001 || mass_on_ray > 1'000)
+                                continue;
+                            if (gaussian1d.C + vol_marcher::config::workaround_variance_add_along_ray <= 0)
+                                continue;
+                            if (stroke::isnan(gaussian1d.centre))
+                                continue;
+
+                            current_large_steps.add(gaussian1d.centre);
+                        }
                     }
-                }
 
-                // blend
-                float T = 1.0f;
-                glm::vec3 C = glm::vec3(0);
-                switch (data.debug_render_mode) {
-                case VolMarcherForwardData::RenderMode::Full: {
+                    // // iterate again, and compute linear interpolations
+                    const auto bins = marching_steps::make_bins<config::n_small_steps>(current_large_steps);
+                    whack::Array<glm::vec4, bins.size()> bin_mass = {};
+                    whack::Array<glm::vec4, bins.size() + 1> bin_eval = {};
 
-                    glm::vec<3, float> result = {};
-                    // float current_m = 0;
-                    float current_transparency = 1;
-                    for (auto k = 0u; k < vol_marcher::config::n_rasterisation_bins; ++k) {
-                        // auto current_bin = rasterised_data[k];
-                        // for (auto i = 0; i < 3; ++i) {
-                        //     current_bin[i] /= current_bin[3] + 0.001f; // make an weighted average out of a weighted sum
-                        // }
-                        // // Avoid numerical instabilities (see paper appendix).
-                        // float alpha = min(0.99f, current_bin[3]);
-                        // if (alpha < 1.0f / 255.0f)
-                        //     continue;
+                    // Iterate over batches until all done or range is complete: rasterise into bins
+                    for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {
+                        // End if entire block votes that it is done rasterizing
+                        const int num_done = __syncthreads_count(done);
+                        if (num_done == render_block_size)
+                            break;
 
-                        // float test_T = T * (1 - alpha);
-                        // if (test_T < 0.0001f) {
-                        //     done = true;
-                        //     break;
-                        // }
+                        // Collectively fetch per-Gaussian data from global to shared
+                        const int progress = i * render_block_size + thread_rank;
+                        if (render_g_range.x + progress < render_g_range.y) {
+                            unsigned coll_id = b_point_list(render_g_range.x + progress);
+                            assert(coll_id < n_gaussians);
+                            collected_id[thread_rank] = coll_id;
+                            collected_centroid[thread_rank] = data.gm_centroids(coll_id);
+                            collected_inv_cov3[thread_rank] = g_inverse_filtered_cov3d(coll_id);
+                            collected_3d_masses[thread_rank] = g_filtered_masses(coll_id);
+                        }
+                        // block.sync();
+                        __syncthreads();
 
-                        // // Eq. (3) from 3D Gaussian splatting paper.
-                        // C += glm::vec3(current_bin) * alpha * T;
-
-                        // T = test_T;
-
-                        const auto t_right = rasterisation_bin_sizer.end_of(k) - rasterisation_bin_sizer.begin_of(k);
-                        if (t_right <= 0)
+                        if (done)
                             continue;
-                        auto percent_left = glm::vec4(rasterisation_bin_sizer.border_mass_begin_of(k) / (rasterisation_bin_sizer.border_mass_begin_of(k) + rasterisation_bin_sizer.border_mass_begin_of(k)));
-                        if (stroke::isnan(percent_left.w)) {
-                            percent_left = glm::vec4(0.5f);
+
+                        // Iterate over current batch
+                        for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
+                            const auto inv_cov = collected_inv_cov3[j];
+                            const auto gaussian1d = gaussian::intersect_with_ray_inv_C(collected_centroid[j], inv_cov, ray);
+                            const auto centroid = gaussian1d.centre;
+                            const auto variance = gaussian1d.C + vol_marcher::config::workaround_variance_add_along_ray;
+                            const auto sd = stroke::sqrt(variance);
+                            const auto inv_sd = 1 / sd;
+                            auto mass_on_ray = gaussian1d.weight * collected_3d_masses[j];
+
+                            if (mass_on_ray < 0.0001 || mass_on_ray > 1'000)
+                                continue;
+                            if (variance <= 0 || stroke::isnan(variance) || stroke::isnan(mass_on_ray) || mass_on_ray > 100'000)
+                                continue; // todo: shouldn't happen any more after implementing AA?
+
+                            // if (weight * gaussian::integrate_normalised_inv_SD(centroid, inv_sd, { 0, rasterisation_bin_sizer.max_distance() }) <= 0.001f) { // performance critical
+                            //     continue;
+                            // }
+
+                            auto cdf_start = gaussian::cdf_inv_SD(centroid, inv_sd, current_large_step_start);
+                            for (auto k = 0u; k < bins.size(); ++k) {
+                                const auto cdf_end = gaussian::cdf_inv_SD(centroid, inv_sd, bins.end_of(k));
+                                const auto mass = stroke::max(0.f, (cdf_end - cdf_start) * mass_on_ray);
+                                cdf_start = cdf_end;
+                                // const auto integrated = weight * gaussian::integrate_inv_SD(centroid, inv_sd, { rasterisation_bin_sizer.begin_of(k), rasterisation_bin_sizer.end_of(k) });
+                                bin_mass[k] += glm::vec4(g_rgb(collected_id[j]) * mass, mass);
+                                const auto eval = mass_on_ray * gaussian::eval_exponential(centroid, variance, bins.begin_of(k));
+                                bin_eval[k] += glm::vec4(g_rgb(collected_id[j]) * eval, eval);
+                            }
+                            const auto eval = mass_on_ray * gaussian::eval_exponential(centroid, variance, bins.end_of(bins.size() - 1));
+                            bin_eval[bins.size()] += glm::vec4(g_rgb(collected_id[j]) * eval, eval);
                         }
-                        if (k > 0 && k < vol_marcher::config::n_rasterisation_bins - 1) {
-                            assert(percent_left.x == percent_left.y);
-                            assert(percent_left.x == percent_left.z);
-                            assert(percent_left.x == percent_left.w);
-                        }
-                        // if (k == 0 || k == vol_raster::config::n_rasterisation_steps - 1)
-                        //     percent_left = bin_eval[k] / (bin_eval[k] + bin_eval[k + 1]);
-                        // if (isnan(percent_left)) {
-                        //     percent_left = glm::vec4(0.5f);
-                        // }
-                        // const auto percent_left = (bin_eval[k] / (bin_eval[k] + bin_eval[k + 1]));
-                        // const auto percent_left = glm::vec4(0.5f, 0.5f, 0.5f, 0.5f);
+                    }
+
+                    // quadrature rule for bins
+                    for (auto k = 0u; k < bins.size(); ++k) {
+                        const auto t_right = bins.end_of(k) - bins.begin_of(k);
+                        if (t_right <= 0.f)
+                            continue;
+                        const auto percent_left = glm::vec4(0.5f);
                         const auto f = dgmr::piecewise_linear::create_approximation(percent_left, bin_mass[k], bin_eval[k], bin_eval[k + 1], t_right);
 
-                        const auto delta_t = f.t_right / vol_marcher::config::n_steps_per_bin;
+                        const auto delta_t = f.t_right / config::n_quadrature_steps;
                         float t = delta_t / 2;
-                        for (unsigned i = 0; i < vol_marcher::config::n_steps_per_bin; ++i) {
+                        for (unsigned i = 0; i < config::n_quadrature_steps; ++i) {
                             assert(t < f.t_right);
                             const auto eval_t = f.sample(t);
-                            // result += glm::dvec3(eval_t) * stroke::exp(-current_m) * delta_t;
-                            result += glm::vec<3, float>(eval_t) * current_transparency * delta_t;
-                            // current_m += eval_t.w * delta_t;
-                            current_transparency *= stroke::max(float(0), 1 - eval_t.w * delta_t);
+                            current_colour += glm::vec<3, float>(eval_t) * current_transparency * delta_t;
+                            // current_transparency *= stroke::max(float(0), 1 - eval_t.w * delta_t);
+                            // current_transparency *= stroke::exp(-eval_t.w * delta_t);
+                            current_mass += eval_t.w * delta_t;
+                            current_transparency = stroke::exp(-current_mass);
                             t += delta_t;
                         }
-                        C = result;
                     }
-                    break;
-                }
-                case VolMarcherForwardData::RenderMode::Bins: {
-                    // const auto bin = stroke::min(unsigned(data.debug_render_bin), config::n_rasterisation_steps - 1);
-                    // auto current_bin = rasterised_data[bin];
-                    // for (auto i = 0; i < 3; ++i) {
-                    //     current_bin[i] /= current_bin[3] + 0.001f; // make an weighted average out of a weighted sum
-                    // }
-                    // float alpha = min(0.99f, current_bin[3]);
-                    // float test_T = T * (1 - alpha);
-                    // C += glm::vec3(current_bin) * alpha * T;
 
-                    // T = test_T;
-                    break;
-                }
-                case VolMarcherForwardData::RenderMode::Depth: {
-                    const auto bin = stroke::min(unsigned(data.debug_render_bin), config::n_rasterisation_bins - 1);
-                    const auto distance = rasterisation_bin_sizer.end_of(bin);
-                    C = glm::vec3(distance / data.max_depth);
-                    if (distance == 0)
-                        C = glm::vec3(0, 1.0, 0);
-                    if (stroke::isnan(distance))
-                        C = glm::vec3(1, 0, 0.5);
-                    if (distance < 0)
-                        C = glm::vec3(1, 0.5, 0);
-                    T = 0;
-                    break;
-                }
+                    large_stepping_ongoing = current_large_steps.size() == config::n_large_steps;
+                    current_large_step_start = current_large_steps[current_large_steps.size() - 1];
                 }
 
                 if (!inside)
                     return;
                 // All threads that treat valid pixel write out their final
-                const auto final_colour = C + T * data.background;
+                const auto final_colour = current_colour + current_transparency * data.background;
                 data.framebuffer(0, pix.y, pix.x) = final_colour.x;
                 data.framebuffer(1, pix.y, pix.x) = final_colour.y;
                 data.framebuffer(2, pix.y, pix.x) = final_colour.z;

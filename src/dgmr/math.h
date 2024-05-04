@@ -260,7 +260,7 @@ STROKE_DEVICES_INLINE scalar_t weight_to_mass(scalar_t weight, const glm::vec<3,
         return weight;
     }
     case Formulation::Density: {
-        return weight;
+        return weight * integrate_exponential(cov3d_scale);
     }
     case Formulation::Ots: {
         const auto i2prime = math::integrate_exponential(larger2(cov3d_scale));
