@@ -567,7 +567,11 @@ dgmr::VolMarcherStatistics dgmr::vol_marcher_forward(VolMarcherForwardData& data
                     }
                     }
 
-                    large_stepping_ongoing = false || (current_large_steps.size() == config::n_large_steps && current_mass < mass_threshold);
+                    done = done || current_large_steps.size() != config::n_large_steps || current_transparency < 0.001f;
+                    const int num_done = __syncthreads_count(done);
+                    if (num_done == render_block_size)
+                        break;
+                    // large_stepping_ongoing = false || (current_large_steps.size() == config::n_large_steps && current_transparency > 0.001f);
                     current_large_step_start = current_large_steps[current_large_steps.size() - 1];
                 }
 
