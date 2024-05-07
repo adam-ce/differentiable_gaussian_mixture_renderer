@@ -388,6 +388,7 @@ dgmr::VolMarcherStatistics dgmr::vol_marcher_forward(VolMarcherForwardData& data
                 while (large_stepping_ongoing) {
                     // Iterate over all gaussians and take the first config::n_large_steps larger than current_large_step_start
                     marching_steps::Array<config::n_large_steps> current_large_steps(current_large_step_start);
+                    n_toDo = render_g_range.y - render_g_range.x;
                     for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {
                         // End if entire block votes that it is done rasterizing
                         const int num_done = __syncthreads_count(done);
@@ -425,12 +426,17 @@ dgmr::VolMarcherStatistics dgmr::vol_marcher_forward(VolMarcherForwardData& data
                         }
                     }
 
-                    // // iterate again, and compute linear interpolations
+                    // iterate again, and compute linear interpolations
                     const auto bins = marching_steps::make_bins<config::n_small_steps>(current_large_steps);
+                    assert(bins.begin_of(0) == current_large_step_start);
                     whack::Array<glm::vec4, bins.size()> bin_mass = {};
                     whack::Array<glm::vec4, bins.size() + 1> bin_eval = {};
 
+                    float dbg_mass_in_bins_closeed = 0;
+                    float dbg_mass_in_bins_numerik_1 = 0;
+
                     // Iterate over batches until all done or range is complete: rasterise into bins
+                    n_toDo = render_g_range.y - render_g_range.x;
                     for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {
                         // End if entire block votes that it is done rasterizing
                         const int num_done = __syncthreads_count(done);
@@ -447,7 +453,6 @@ dgmr::VolMarcherStatistics dgmr::vol_marcher_forward(VolMarcherForwardData& data
                             collected_inv_cov3[thread_rank] = g_inverse_filtered_cov3d(coll_id);
                             collected_3d_masses[thread_rank] = g_filtered_masses(coll_id);
                         }
-                        // block.sync();
                         __syncthreads();
 
                         if (done)
@@ -461,55 +466,108 @@ dgmr::VolMarcherStatistics dgmr::vol_marcher_forward(VolMarcherForwardData& data
                             const auto variance = gaussian1d.C + vol_marcher::config::workaround_variance_add_along_ray;
                             const auto sd = stroke::sqrt(variance);
                             const auto inv_sd = 1 / sd;
-                            auto mass_on_ray = gaussian1d.weight * collected_3d_masses[j];
+                            const auto mass_on_ray = gaussian1d.weight * collected_3d_masses[j];
+                            const auto weight = mass_on_ray * gaussian::norm_factor(variance);
 
+                            if (stroke::isnan(gaussian1d.centre))
+                                continue;
                             if (mass_on_ray < 0.0001 || mass_on_ray > 1'000)
                                 continue;
                             if (variance <= 0 || stroke::isnan(variance) || stroke::isnan(mass_on_ray) || mass_on_ray > 100'000)
                                 continue; // todo: shouldn't happen any more after implementing AA?
 
-                            // if (weight * gaussian::integrate_normalised_inv_SD(centroid, inv_sd, { 0, rasterisation_bin_sizer.max_distance() }) <= 0.001f) { // performance critical
-                            //     continue;
-                            // }
+                            assert(current_large_step_start == bins.begin_of(0));
+                            const auto mass_in_bins = mass_on_ray * gaussian::integrate_normalised_inv_SD(centroid, inv_sd, { bins.begin_of(0), bins.end_of(bins.size() - 1) });
+
+                            if (mass_in_bins < 0.0001f) { // performance critical
+                                const auto eval = weight * gaussian::eval_exponential(centroid, variance, bins.end_of(bins.size() - 1));
+                                bin_eval[bins.size()] += glm::vec4(g_rgb(collected_id[j]) * eval, eval);
+                                continue;
+                            }
+                            dbg_mass_in_bins_closeed += mass_in_bins;
 
                             auto cdf_start = gaussian::cdf_inv_SD(centroid, inv_sd, current_large_step_start);
                             for (auto k = 0u; k < bins.size(); ++k) {
+                                if (bins.end_of(k) - bins.begin_of(k) <= 0.000001f)
+                                    continue;
                                 const auto cdf_end = gaussian::cdf_inv_SD(centroid, inv_sd, bins.end_of(k));
                                 const auto mass = stroke::max(0.f, (cdf_end - cdf_start) * mass_on_ray);
+                                // const auto mass = mass_on_ray * gaussian::integrate_normalised_inv_SD(centroid, inv_sd, { bins.begin_of(k), bins.end_of(k) });
                                 cdf_start = cdf_end;
-                                // const auto integrated = weight * gaussian::integrate_inv_SD(centroid, inv_sd, { rasterisation_bin_sizer.begin_of(k), rasterisation_bin_sizer.end_of(k) });
+                                if (mass < 0.0001f)
+                                    continue;
+                                dbg_mass_in_bins_numerik_1 += mass;
                                 bin_mass[k] += glm::vec4(g_rgb(collected_id[j]) * mass, mass);
-                                const auto eval = mass_on_ray * gaussian::eval_exponential(centroid, variance, bins.begin_of(k));
+                                const auto eval = weight * gaussian::eval_exponential(centroid, variance, bins.begin_of(k));
                                 bin_eval[k] += glm::vec4(g_rgb(collected_id[j]) * eval, eval);
                             }
-                            const auto eval = mass_on_ray * gaussian::eval_exponential(centroid, variance, bins.end_of(bins.size() - 1));
+                            const auto eval = weight * gaussian::eval_exponential(centroid, variance, bins.end_of(bins.size() - 1));
                             bin_eval[bins.size()] += glm::vec4(g_rgb(collected_id[j]) * eval, eval);
                         }
                     }
 
-                    // quadrature rule for bins
-                    for (auto k = 0u; k < bins.size(); ++k) {
-                        const auto t_right = bins.end_of(k) - bins.begin_of(k);
-                        if (t_right <= 0.f)
-                            continue;
-                        const auto percent_left = glm::vec4(0.5f);
-                        const auto f = dgmr::piecewise_linear::create_approximation(percent_left, bin_mass[k], bin_eval[k], bin_eval[k + 1], t_right);
+                    switch (data.debug_render_mode) {
+                    case VolMarcherForwardData::RenderMode::Full: {
+                        // quadrature rule for bins
+                        auto bin_eval_left = bin_eval[0];
+                        auto bin_eval_right = bin_eval_left;
+                        for (auto k = 0u; k < bins.size(); ++k) {
+                            const auto t_right = bins.end_of(k) - bins.begin_of(k);
+                            if (t_right <= 0.0f || bin_mass[k] == glm ::vec4(0)) {
+                                continue;
+                            }
+                            bin_eval_right = bin_eval[k + 1];
+                            const auto percent_left = glm::vec4(0.5f);
+                            const auto f = dgmr::piecewise_linear::create_approximation(percent_left, bin_mass[k], bin_eval_left, bin_eval_right, t_right);
+                            bin_eval_left = bin_eval_right;
 
-                        const auto delta_t = f.t_right / config::n_quadrature_steps;
-                        float t = delta_t / 2;
-                        for (unsigned i = 0; i < config::n_quadrature_steps; ++i) {
-                            assert(t < f.t_right);
-                            const auto eval_t = f.sample(t);
-                            current_colour += glm::vec<3, float>(eval_t) * current_transparency * delta_t;
-                            // current_transparency *= stroke::max(float(0), 1 - eval_t.w * delta_t);
-                            // current_transparency *= stroke::exp(-eval_t.w * delta_t);
-                            current_mass += eval_t.w * delta_t;
-                            current_transparency = stroke::exp(-current_mass);
-                            t += delta_t;
+                            const auto delta_t = f.t_right / config::n_quadrature_steps;
+                            float t = delta_t / 2;
+                            for (unsigned i = 0; i < config::n_quadrature_steps; ++i) {
+                                assert(t < f.t_right);
+                                const auto eval_t = f.sample(t);
+                                current_colour += glm::vec<3, float>(eval_t) * current_transparency * delta_t;
+                                current_transparency *= stroke::max(float(0), 1 - eval_t.w * delta_t);
+                                // current_transparency *= stroke::exp(-eval_t.w * delta_t);
+                                // current_mass += eval_t.w * delta_t;
+                                // current_transparency = stroke::exp(-current_mass);
+                                t += delta_t;
+                            }
                         }
+                        break;
+                    }
+                    case VolMarcherForwardData::RenderMode::Bins: {
+                        const auto bin = stroke::min(unsigned(data.debug_render_bin), bins.size() - 1);
+                        // const auto mass = sum(bin_eval[bin]);
+                        const auto mass = (bin == 0) ? dbg_mass_in_bins_closeed : dbg_mass_in_bins_numerik_1;
+                        current_colour = glm::vec3(mass * data.max_depth);
+                        if (mass == 0)
+                            current_colour = glm::vec3(0, 1.0, 0);
+                        if (stroke::isnan(mass))
+                            current_colour = glm::vec3(1, 0, 0.5);
+                        if (mass < 0)
+                            current_colour = glm::vec3(1, 0.0, 0);
+                        current_transparency = 0;
+                        break;
+                    }
+                    case VolMarcherForwardData::RenderMode::Depth: {
+                        const auto bin = stroke::min(unsigned(data.debug_render_bin), bins.size() - 1);
+                        const auto distance = bins.end_of(bin);
+                        // const auto bin = stroke::min(unsigned(data.debug_render_bin), current_large_steps.size() - 1);
+                        // const auto distance = current_large_steps.data()[bin];
+                        current_colour = glm::vec3(distance / data.max_depth);
+                        if (distance == 0)
+                            current_colour = glm::vec3(0, 1.0, 0);
+                        if (stroke::isnan(distance))
+                            current_colour = glm::vec3(1, 0, 0.5);
+                        if (distance < 0)
+                            current_colour = glm::vec3(1, 0.5, 0);
+                        current_transparency = 0;
+                        break;
+                    }
                     }
 
-                    large_stepping_ongoing = current_large_steps.size() == config::n_large_steps;
+                    large_stepping_ongoing = false || (current_large_steps.size() == config::n_large_steps && current_mass < mass_threshold);
                     current_large_step_start = current_large_steps[current_large_steps.size() - 1];
                 }
 

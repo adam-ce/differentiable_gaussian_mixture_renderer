@@ -111,15 +111,18 @@ STROKE_DEVICES_INLINE Bins<n_small_steps*(n_large_steps - 1)> make_bins(const Ar
     for (unsigned i = 0; i < arr.size() - 1; ++i) {
         float curr_start = arr[i];
         assert(!stroke::isnan(curr_start));
-        const float curr_size = (arr[i + 1] - curr_start) / n_small_steps;
+        const float curr_size = std::max(0.001f, (arr[i + 1] - curr_start) / n_small_steps);
         for (unsigned j = 0; j < n_small_steps; ++j) {
             assert(!stroke::isnan(curr_start));
             assert(curr_start >= 0.f);
             bins.borders[current_bin++] = curr_start;
             curr_start += curr_size;
+            curr_start = stroke::min(arr[i + 1], curr_start);
         }
     }
-    bins.borders[current_bin] = arr[arr.size() - 1];
+    const auto v = arr[arr.size() - 1];
+    for (; current_bin < bins.size() + 1; ++current_bin)
+        bins.borders[current_bin] = v;
 
     return bins;
 }

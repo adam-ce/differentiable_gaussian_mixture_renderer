@@ -475,6 +475,8 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                             const auto cdf_end = gaussian::cdf_inv_SD(centroid, inv_sd, rasterisation_bin_sizer.end_of(k));
                             const auto mass = (cdf_end - cdf_start) * weight;
                             cdf_start = cdf_end;
+                            if (mass < 0.0001f)
+                                continue;
                             //                            const auto integrated = weight * gaussian::integrate_inv_SD(centroid, inv_sd, { rasterisation_bin_sizer.begin_of(k), rasterisation_bin_sizer.end_of(k) });
                             bin_mass[k] += glm::vec4(g_rgb(collected_id[j]) * mass, mass);
                             const auto eval = weight * gaussian::eval_exponential(centroid, variance, rasterisation_bin_sizer.begin_of(k));

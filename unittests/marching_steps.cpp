@@ -184,6 +184,28 @@ TEST_CASE("dgmr marching step bins")
     SECTION("2 subdivisions, no array elements")
     {
         dgmr::marching_steps::Array<4> arr(0.0);
+        arr.add(1.0);
+
+        const auto bins = dgmr::marching_steps::make_bins<2>(arr);
+        CHECK(bins.size() == 6);
+
+        CHECK(bins.begin_of(0) == Approx(0.0));
+        CHECK(bins.end_of(0) == Approx(0.5));
+        CHECK(bins.begin_of(1) == Approx(0.5));
+        CHECK(bins.end_of(1) == Approx(1.0));
+        CHECK(bins.begin_of(2) == Approx(1.0));
+        CHECK(bins.end_of(2) == Approx(1.0));
+        CHECK(bins.begin_of(3) == Approx(1.0));
+        CHECK(bins.end_of(3) == Approx(1.0));
+        CHECK(bins.begin_of(4) == Approx(1.0));
+        CHECK(bins.end_of(4) == Approx(1.0));
+        CHECK(bins.begin_of(5) == Approx(1.0));
+        CHECK(bins.end_of(5) == Approx(1.0));
+    }
+
+    SECTION("2 subdivisions, array not full")
+    {
+        dgmr::marching_steps::Array<4> arr(0.0);
 
         const auto bins = dgmr::marching_steps::make_bins<2>(arr);
         CHECK(bins.size() == 6);
