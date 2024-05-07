@@ -103,6 +103,12 @@ STROKE_DEVICES_INLINE glm::vec<2, scalar_t> ndc2screen(const glm::vec<3, scalar_
 }
 
 template <typename scalar_t>
+STROKE_DEVICES_INLINE scalar_t max(const glm::vec<3, scalar_t>& vec)
+{
+    return stroke::max(vec.x, stroke::max(vec.y, vec.z));
+}
+
+template <typename scalar_t>
 STROKE_DEVICES_INLINE glm::vec<2, scalar_t> larger2(const glm::vec<3, scalar_t>& vec)
 {
     // if (vec[0] < vec[1] && vec[0] < vec[2])

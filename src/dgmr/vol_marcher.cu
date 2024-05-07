@@ -214,14 +214,14 @@ dgmr::VolMarcherStatistics dgmr::vol_marcher_forward(VolMarcherForwardData& data
                     g_points_xy_image(idx) = screen_space_gaussian.centroid;
                 }
 
-                g_depths(idx) = glm::length(data.cam_poition - centroid);
-                // g_depths(idx) = math::gaussian_to_point_distance_bounds(
-                // centroid, data.gm_cov_scales(idx), data.gm_cov_rotations(idx), vol_raster::config::gaussian_relevance_sigma, data.cam_poition)
-                // .max;
+                const auto inverse_filtered_cov = stroke::inverse(filtered_cov_3d);
+
+                // g_depths(idx) = glm::length(data.cam_poition - centroid);
+                g_depths(idx) = (glm::length(data.cam_poition - centroid) - math::max(scales) * 3);
 
                 // convert spherical harmonics coefficients to RGB color.
                 g_rgb(idx) = computeColorFromSH(data.sh_degree, centroid, data.cam_poition, data.gm_sh_params(idx), &g_rgb_sh_clamped(idx));
-                g_inverse_filtered_cov3d(idx) = stroke::inverse(filtered_cov_3d);
+                g_inverse_filtered_cov3d(idx) = inverse_filtered_cov;
                 g_filtered_masses(idx) = mass;
             });
     }
@@ -413,6 +413,10 @@ dgmr::VolMarcherStatistics dgmr::vol_marcher_forward(VolMarcherForwardData& data
                         // Iterate over current batch
                         for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
                             const auto gaussian1d = gaussian::intersect_with_ray_inv_C(collected_centroid[j], collected_inv_cov3[j], ray);
+
+                            if (current_large_steps.size() == config::n_large_steps && gaussian1d.centre > current_large_steps[config::n_large_steps - 1]) {
+                                break;
+                            }
 
                             auto mass_on_ray = gaussian1d.weight * collected_3d_masses[j];
                             if (mass_on_ray < 0.0001 || mass_on_ray > 1'000)
