@@ -483,7 +483,6 @@ dgmr::VolMarcherStatistics dgmr::vol_marcher_forward(VolMarcherForwardData& data
                             const auto sd = stroke::sqrt(variance);
                             const auto inv_sd = 1 / sd;
                             const auto mass_on_ray = gaussian1d.weight * collected_3d_masses[j];
-                            const auto weight = mass_on_ray * gaussian::norm_factor(variance);
 
                             if (stroke::isnan(gaussian1d.centre))
                                 continue;
@@ -499,14 +498,18 @@ dgmr::VolMarcherStatistics dgmr::vol_marcher_forward(VolMarcherForwardData& data
                             }
                             dbg_mass_in_bins_closeed += mass_in_bins;
 
+                            auto cdf_start = gaussian::cdf_inv_SD(centroid, inv_sd, current_large_step_start);
                             for (auto k = 0u; k < bin_borders.size() - 1; ++k) {
-                                const auto left = bin_borders[k];
+                                // const auto left = bin_borders[k];
                                 const auto right = bin_borders[k + 1];
-                                const auto position = (left + right) / 2;
-                                const auto delta_t = (right - left);
+                                // const auto position = (left + right) / 2;
+                                // const auto delta_t = (right - left);
+                                const auto cdf_end = gaussian::cdf_inv_SD(centroid, inv_sd, right);
+                                const auto mass = stroke::max(0.f, (cdf_end - cdf_start) * mass_on_ray);
+                                cdf_start = cdf_end;
 
-                                const auto eval = weight * gaussian::eval_exponential(centroid, variance, position);
-                                const auto mass = stroke::max(0.f, eval * delta_t);
+                                // const auto eval = weight * gaussian::eval_exponential(centroid, variance, position);
+                                // const auto mass = stroke::max(0.f, eval * delta_t);
                                 if (mass < 0.00001f)
                                     continue;
 
