@@ -11,7 +11,7 @@ import math
 
 
 # complex example 2
-centroids = np.array([2.4, 0.4, 2.7, 2.9, 3.5, 2.9, 5.2, 7.5, 6.9, 8.4, 8.0, 9.3]).reshape(-1, 1)
+centroids = np.array([2.4, 0.4, 2.7, 3.0, 3.5, 2.9, 5.2, 7.5, 6.9, 8.4, 8.0, 9.3]).reshape(-1, 1)
 SDs =       np.array([0.5, 0.4, 0.3, 0.9, 0.7, 0.9, 0.2, 0.5, 1.9, 0.8, 0.4, 1.3]).reshape(-1, 1)
 weights =   np.array([0.5, 0.4, 0.5, 0.9, 0.7, 0.9, 1.2, 0.5, 0.9, 1.8, 0.9, 1.7]).reshape(-1, 1) * 0.5
 c_g =       np.array([0.2, 0.5, 0.9, 0.4, 0.1, 0.4, 0.2, 0.8, 0.2, 0.8, 0.4, 0.3]).reshape(-1, 1)
@@ -56,116 +56,138 @@ def c(xes: np.array) -> np.array:
 def vol_val(xes: np.array) -> np.array:
     return c(xes)*gm(xes)*np.exp(-integrate_gm_0_to(xes))
 
-def compute_bin_borders(n_bins: int) -> np.array:
-    transmission_threshold = 0.05
-    centr_p_k_sig = (centroids + SDs * 2).reshape(-1)
-    g_ints = integrate_g_0_to(centr_p_k_sig.reshape(-1, 1)).reshape(-1)
-    # g_ints = g(centroids.reshape(-1, 1)).reshape(-1)
+# def compute_bin_borders(n_bins: int) -> np.array:
+#     transmission_threshold = 0.05
+#     centr_p_k_sig = (centroids + SDs * 2).reshape(-1)
+#     g_ints = integrate_g_0_to(centr_p_k_sig.reshape(-1, 1)).reshape(-1)
+#     # g_ints = g(centroids.reshape(-1, 1)).reshape(-1)
 
-    tb_centr = np.ones(n_bins) * np.infty
-    tb_SD = np.zeros(n_bins)
-    tb_mass = np.zeros(n_bins)
-    tb_trans = np.zeros(n_bins)
-    transmittance = 1
-    last_bin_index = 0
-    integration_range_end = 0
+#     tb_centr = np.ones(n_bins) * np.infty
+#     tb_SD = np.zeros(n_bins)
+#     tb_mass = np.zeros(n_bins)
+#     tb_trans = np.zeros(n_bins)
+#     transmittance = 1
+#     last_bin_index = 0
+#     integration_range_end = 0
 
-    for index in range(len(centroids)):
-        if transmittance <= transmission_threshold:
-            break
+#     for index in range(len(centroids)):
+#         if transmittance <= transmission_threshold:
+#             break
 
-        # add gaussian
-        tb_centr[last_bin_index] = centroids[index]
-        tb_SD[last_bin_index] = SDs[index]
-        tb_mass[last_bin_index] = g_ints[index]
-        integration_range_end = max(integration_range_end, centr_p_k_sig[index])
-        ordered_indices = np.argsort(tb_centr)
-        tb_centr = tb_centr[ordered_indices]
-        tb_mass = tb_mass[ordered_indices]
-        last_bin_index = last_bin_index + 1
+#         # add gaussian
+#         tb_centr[last_bin_index] = centroids[index]
+#         tb_SD[last_bin_index] = SDs[index]
+#         tb_mass[last_bin_index] = g_ints[index]
+#         integration_range_end = max(integration_range_end, centr_p_k_sig[index])
+#         ordered_indices = np.argsort(tb_centr)
+#         tb_centr = tb_centr[ordered_indices]
+#         tb_mass = tb_mass[ordered_indices]
+#         last_bin_index = last_bin_index + 1
 
-        def merge(a: int, b: int):
-            assert a >= 0
-            assert a < b
-            assert b < n_bins
-            percentage_a = tb_trans[a] * tb_mass[a] / (tb_trans[a] * tb_mass[a]  + tb_trans[b] * tb_mass[b])
-            # percentage_a = tb_mass[a] / (tb_mass[a]  + tb_mass[b])
-            percentage_b =  1 - percentage_a
-            if tb_centr[a] + tb_SD[a] * 1.5 > tb_centr[b] - tb_SD[b] * 1.5 or True:
-                new_centr = percentage_a * tb_centr[a] + percentage_b * tb_centr[b]
-            else:
-                new_centr = tb_centr[a if tb_trans[a] * tb_mass[a] > tb_trans[b] * tb_mass[b] else b]
-            new_int = tb_mass[a] + tb_mass[b]
-            var_a = sq(tb_SD[a])
-            var_b = sq(tb_SD[b])
-            new_var = percentage_a * (var_a + (tb_centr[a] - new_centr) * (tb_centr[a] - new_centr)) + \
-                      percentage_b * (var_b + (tb_centr[b] - new_centr) * (tb_centr[b] - new_centr))
-            return new_centr, math.sqrt(new_var), new_int
+#         def merge(a: int, b: int):
+#             assert a >= 0
+#             assert a < b
+#             assert b < n_bins
+#             percentage_a = tb_trans[a] * tb_mass[a] / (tb_trans[a] * tb_mass[a]  + tb_trans[b] * tb_mass[b])
+#             # percentage_a = tb_mass[a] / (tb_mass[a]  + tb_mass[b])
+#             percentage_b =  1 - percentage_a
+#             if tb_centr[a] + tb_SD[a] * 1.5 > tb_centr[b] - tb_SD[b] * 1.5 or True:
+#                 new_centr = percentage_a * tb_centr[a] + percentage_b * tb_centr[b]
+#             else:
+#                 new_centr = tb_centr[a if tb_trans[a] * tb_mass[a] > tb_trans[b] * tb_mass[b] else b]
+#             new_int = tb_mass[a] + tb_mass[b]
+#             var_a = sq(tb_SD[a])
+#             var_b = sq(tb_SD[b])
+#             new_var = percentage_a * (var_a + (tb_centr[a] - new_centr) * (tb_centr[a] - new_centr)) + \
+#                       percentage_b * (var_b + (tb_centr[b] - new_centr) * (tb_centr[b] - new_centr))
+#             return new_centr, math.sqrt(new_var), new_int
 
 
-        def cost(index: int):
-            assert index >= 0
-            assert index < n_bins
-            # return tb_trans[index] * min(tb_int[index], tb_int[index + 1]) * abs(tb_centr[index] - tb_centr[index + 1])
+#         def cost(index: int):
+#             assert index >= 0
+#             assert index < n_bins
+#             # return tb_trans[index] * min(tb_int[index], tb_int[index + 1]) * abs(tb_centr[index] - tb_centr[index + 1])
 
-            def kl_div(c1, sd1, c2, sd2):
-                return (sq(c1-c2) + sq(sd1) - sq(sd2)) / (2 * sq(sd2)) + math.log(sd2 / sd1)
+#             def kl_div(c1, sd1, c2, sd2):
+#                 return (sq(c1-c2) + sq(sd1) - sq(sd2)) / (2 * sq(sd2)) + math.log(sd2 / sd1)
 
-            c_m, sd_m, _ = merge(index, index + 1)
-            c1 = tb_centr[index]
-            c2 = tb_centr[index + 1]
-            sd1 = tb_SD[index]
-            sd2 = tb_SD[index + 1]
-            return tb_trans[index] * ( kl_div(c1, sd1, c_m, sd_m) +  kl_div(c2, sd2, c_m, sd_m))
+#             c_m, sd_m, _ = merge(index, index + 1)
+#             c1 = tb_centr[index]
+#             c2 = tb_centr[index + 1]
+#             sd1 = tb_SD[index]
+#             sd2 = tb_SD[index + 1]
+#             return tb_trans[index] * ( kl_div(c1, sd1, c_m, sd_m) +  kl_div(c2, sd2, c_m, sd_m))
 
-        def closer_neighbour(index: int) -> int:
-            if index == 0:
-                return 1
-            if index == len(tb_centr) - 1:
-                return index - 1
-            if abs(tb_centr[index] - tb_centr[index - 1]) < abs(tb_centr[index] - tb_centr[index + 1]):
-                return index - 1
-            return index + 1
+#         def closer_neighbour(index: int) -> int:
+#             if index == 0:
+#                 return 1
+#             if index == len(tb_centr) - 1:
+#                 return index - 1
+#             if abs(tb_centr[index] - tb_centr[index - 1]) < abs(tb_centr[index] - tb_centr[index + 1]):
+#                 return index - 1
+#             return index + 1
 
-        if last_bin_index == n_bins:
-            # recompute transmission weighted integrals
-            transmittance = 1
-            for j in range(n_bins):
-                tb_trans[j] = transmittance
-                transmittance = transmittance * np.exp(-tb_mass[j])
+#         if last_bin_index == n_bins:
+#             # recompute transmission weighted integrals
+#             transmittance = 1
+#             for j in range(n_bins):
+#                 tb_trans[j] = transmittance
+#                 transmittance = transmittance * np.exp(-tb_mass[j])
 
-            # search for merge candidate
-            best_idx = -1
-            best_idx_val = np.infty
-            for j in range(n_bins - 1):
-                val = cost(j)
-                if (val < best_idx_val):
-                    best_idx_val = val
-                    best_idx = j
-            assert(best_idx >= 0)
-            assert(best_idx < n_bins - 1)
+#             # search for merge candidate
+#             best_idx = -1
+#             best_idx_val = np.infty
+#             for j in range(n_bins - 1):
+#                 val = cost(j)
+#                 if (val < best_idx_val):
+#                     best_idx_val = val
+#                     best_idx = j
+#             assert(best_idx >= 0)
+#             assert(best_idx < n_bins - 1)
                 
-            # merge
-            new_centr, new_SD, new_int = merge(best_idx, best_idx + 1)
+#             # merge
+#             new_centr, new_SD, new_int = merge(best_idx, best_idx + 1)
 
-            tb_centr[best_idx] = new_centr
-            tb_mass[best_idx] = new_int
-            tb_SD[best_idx] = new_SD
+#             tb_centr[best_idx] = new_centr
+#             tb_mass[best_idx] = new_int
+#             tb_SD[best_idx] = new_SD
 
-            for j in range(best_idx + 1, n_bins - 1):
-                tb_centr[j] = tb_centr[j + 1]
-                tb_mass[j] = tb_mass[j + 1]
-                tb_SD[j] = tb_SD[j + 1]
-            last_bin_index = n_bins - 1
+#             for j in range(best_idx + 1, n_bins - 1):
+#                 tb_centr[j] = tb_centr[j + 1]
+#                 tb_mass[j] = tb_mass[j + 1]
+#                 tb_SD[j] = tb_SD[j + 1]
+#             last_bin_index = n_bins - 1
             
     
-    borders = np.concatenate(([0.0], tb_centr[:-1], [integration_range_end]))
-    inf_indices = np.isinf(borders)
-    valid_indices = ~inf_indices
-    borders[inf_indices] = np.interp(np.flatnonzero(inf_indices), 
-                                 np.flatnonzero(valid_indices), 
-                                 borders[valid_indices])
-    return borders.reshape(1, -1), np.concatenate(([0.0], tb_mass[:-1], [0]))
+#     borders = np.concatenate(([0.0], tb_centr[:-1], [integration_range_end]))
+#     inf_indices = np.isinf(borders)
+#     valid_indices = ~inf_indices
+#     borders[inf_indices] = np.interp(np.flatnonzero(inf_indices), 
+#                                  np.flatnonzero(valid_indices), 
+#                                  borders[valid_indices])
+#     return borders.reshape(1, -1), np.concatenate(([0.0], tb_mass[:-1], [0]))
+
+def compute_bin_borders(n_bins: int) -> np.array:
+    def interpolate_sorted_array(arr, n_bins):
+        interpolated_array = []
+        for i in range(len(arr) - 1):
+            interpolated_array.append(arr[i])
+            diff = arr[i+1] - arr[i]
+            step = diff / (n_bins + 1)
+            for j in range(1, n_bins + 1):
+                interpolated_array.append(arr[i] + j * step)
+        interpolated_array.append(arr[-1])  # Add the last element
+        return np.array(interpolated_array)
+
+    borders = np.sort(np.concatenate(([0.0], centroids.reshape(-1), [15.0])))
+    borders = interpolate_sorted_array(borders, 4)
+
+    # inf_indices = np.isinf(borders)
+    # valid_indices = ~inf_indices
+    # borders[inf_indices] = np.interp(np.flatnonzero(inf_indices), 
+    #                              np.flatnonzero(valid_indices), 
+    #                              borders[valid_indices])
+    return borders.reshape(1, -1), np.zeros_like(borders)
 
 # def compute_bin_borders(n_bins: int) -> np.array:
     # return np.arange(0, 15, 2, dtype=np.float64).reshape(1, -1) # equal spacing
@@ -207,9 +229,11 @@ def compute_f_lin_approx_factors():
     # not carry much mass. but we can make one of the triangles larger.
     # we don't want to do that if we devide in 2, because that would take away sharpness (?)
     # percentage_left = border_masses[i_s] / (border_masses[i_s] + border_masses[i_s + 1])
-    percentage_left = np.where(border_masses[i_s] * border_masses[i_s + 1] == 0, \
-                               f_borders[i_s] / (f_borders[i_s] + f_borders[i_s + 1]), \
-                               border_masses[i_s] / (border_masses[i_s] + border_masses[i_s + 1]))
+    # percentage_left = np.where(border_masses[i_s] * border_masses[i_s + 1] == 0, \
+    #                            f_borders[i_s] / (f_borders[i_s] + f_borders[i_s + 1]), \
+    #                            border_masses[i_s] / (border_masses[i_s] + border_masses[i_s + 1]))
+    # percentage_left = f_borders[i_s] / (f_borders[i_s] + f_borders[i_s + 1])
+    percentage_left = np.ones_like(border_masses[i_s]) * 0.5
     # masses_left = masses * (f_borders[i_s] / (f_borders[i_s] + f_borders[i_s + 1]))
     masses_left = masses * percentage_left
     masses_right = masses - masses_left
@@ -296,14 +320,14 @@ plt.plot(xes.reshape(-1), gm(xes), label='gm', zorder=1) # color="tab:blue",
 # plt.plot(xes.reshape(-1), integrate_gm_0_to(xes), label='integrate_gm_0_to')
 # plt.plot(xes.reshape(-1), np.exp(-1 * gm_int), label='transmittance')
 # plt.plot(xes.reshape(-1), gm_evals * np.exp(-1 * gm_int), label='transmittance * gm')
-plt.plot(xes.reshape(-1), c(xes), label='c')
+# plt.plot(xes.reshape(-1), c(xes), label='c')
 # plt.plot(xes.reshape(-1), vol_val(xes), label='vol_val gm')
 plt.plot(xes.reshape(-1), vol_int(gm, c), label='vol_int gm')
 plt.plot(xes.reshape(-1), vol_int(f_lin_approx, c_lin_approx), label='vol_int approx')
 
 # plt.plot(xes.reshape(-1), np.cumsum(vol_val(xes)) * delta, label='vol_int')
 # plt.scatter(bin_borders, c_bin_borders, label='c_bin_borders')
-plt.plot(xes.reshape(-1), c_lin_approx(xes), label='c_interpol')
+# plt.plot(xes.reshape(-1), c_lin_approx(xes), label='c_interpol')
 # plt.plot(np.array([0-1, 17]), np.array([0, 0]), color="lightgray", zorder=0)
 plt.plot(xes.reshape(-1), f_lin_approx(xes), label='f', color="tab:orange", zorder=1)
 # plt.plot(xes.reshape(-1), f_lin_approx(xes) * np.exp(-1 * gm_int), label='f * transmittance', color="tab:orange", zorder=1)
