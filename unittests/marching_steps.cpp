@@ -133,6 +133,251 @@ TEST_CASE("dgmr marching step Array")
         CHECK(arr[2] == 2.5f);
         CHECK(arr[3] == 3.5f);
     }
+
+    SECTION("bulk add to empty")
+    {
+        dgmr::marching_steps::Array<4> arr(0.5);
+        arr.add(whack::Array<float, 6> { 0, 1, 2, 3, 4, 5 });
+        CHECK(arr.size() == 4);
+        CHECK(arr[0] == 0.5f);
+        CHECK(arr[1] == 1.0f);
+        CHECK(arr[2] == 2.0f);
+        CHECK(arr[3] == 3.0f);
+    }
+
+    SECTION("bulk add to empty 2")
+    {
+        dgmr::marching_steps::Array<8> arr(0.5);
+        arr.add(whack::Array<float, 4> { 0, .1, .2, .3 });
+        CHECK(arr.size() == 1);
+
+        arr.add(whack::Array<float, 4> { 0, 1, 2, 3 });
+        CHECK(arr.size() == 4);
+        CHECK(arr[0] == 0.5f);
+        CHECK(arr[1] == 1.0f);
+        CHECK(arr[2] == 2.0f);
+        CHECK(arr[3] == 3.0f);
+
+        arr.add(whack::Array<float, 4> { 0, 0.6, 3.5, 4.5 });
+        CHECK(arr.size() == 7);
+        CHECK(arr[0] == 0.5f);
+        CHECK(arr[1] == 0.6f);
+        CHECK(arr[2] == 1.0f);
+        CHECK(arr[3] == 2.0f);
+        CHECK(arr[4] == 3.0f);
+        CHECK(arr[5] == 3.5f);
+        CHECK(arr[6] == 4.5f);
+
+        arr.add(whack::Array<float, 4> { 3.4, 3.6, 3.7, 3.8 });
+        CHECK(arr.size() == 8);
+        CHECK(arr[0] == 0.5f);
+        CHECK(arr[1] == 0.6f);
+        CHECK(arr[2] == 1.0f);
+        CHECK(arr[3] == 2.0f);
+        CHECK(arr[4] == 3.0f);
+        CHECK(arr[5] == 3.4f);
+        CHECK(arr[6] == 3.5f);
+        CHECK(arr[7] == 3.6f);
+    }
+
+    SECTION("bulk add to empty 2")
+    {
+        dgmr::marching_steps::Array<8> arr(0.5);
+
+        arr.add(whack::Array<float, 2> { 1, 2 });
+        CHECK(arr.size() == 3);
+        CHECK(arr[0] == 0.5f);
+        CHECK(arr[1] == 1.0f);
+        CHECK(arr[2] == 2.0f);
+
+        arr.add(whack::Array<float, 2> { 0.6, 3.0 });
+        CHECK(arr.size() == 5);
+        CHECK(arr[0] == 0.5f);
+        CHECK(arr[1] == 0.6f);
+        CHECK(arr[2] == 1.0f);
+        CHECK(arr[3] == 2.0f);
+        CHECK(arr[4] == 3.0f);
+
+        arr.add(whack::Array<float, 2> { 3.4, 3.6 });
+        CHECK(arr.size() == 7);
+        CHECK(arr[0] == 0.5f);
+        CHECK(arr[1] == 0.6f);
+        CHECK(arr[2] == 1.0f);
+        CHECK(arr[3] == 2.0f);
+        CHECK(arr[4] == 3.0f);
+        CHECK(arr[5] == 3.4f);
+        CHECK(arr[6] == 3.6f);
+
+        arr.add(whack::Array<float, 2> { 3.7, 3.8 });
+        CHECK(arr.size() == 8);
+        CHECK(arr[0] == 0.5f);
+        CHECK(arr[1] == 0.6f);
+        CHECK(arr[2] == 1.0f);
+        CHECK(arr[3] == 2.0f);
+        CHECK(arr[4] == 3.0f);
+        CHECK(arr[5] == 3.4f);
+        CHECK(arr[6] == 3.6f);
+        CHECK(arr[7] == 3.7f);
+
+        arr.add(whack::Array<float, 2> { 4.7, 5.8 });
+        CHECK(arr.size() == 8);
+        CHECK(arr[0] == 0.5f);
+        CHECK(arr[1] == 0.6f);
+        CHECK(arr[2] == 1.0f);
+        CHECK(arr[3] == 2.0f);
+        CHECK(arr[4] == 3.0f);
+        CHECK(arr[5] == 3.4f);
+        CHECK(arr[6] == 3.6f);
+        CHECK(arr[7] == 3.7f);
+
+        arr.add(whack::Array<float, 2> { 1.7, 1.8 });
+        CHECK(arr.size() == 8);
+        CHECK(arr[0] == 0.5f);
+        CHECK(arr[1] == 0.6f);
+        CHECK(arr[2] == 1.0f);
+        CHECK(arr[3] == 1.7f);
+        CHECK(arr[4] == 1.8f);
+        CHECK(arr[5] == 2.0f);
+        CHECK(arr[6] == 3.0f);
+        CHECK(arr[7] == 3.4f);
+
+        arr.add(whack::Array<float, 2> { 0.1, 0.55 });
+        CHECK(arr.size() == 8);
+        CHECK(arr[0] == 0.5f);
+        CHECK(arr[1] == 0.55f);
+        CHECK(arr[2] == 0.6f);
+        CHECK(arr[3] == 1.0f);
+        CHECK(arr[4] == 1.7f);
+        CHECK(arr[5] == 1.8f);
+        CHECK(arr[6] == 2.0f);
+        CHECK(arr[7] == 3.0f);
+    }
+
+    SECTION("bulk add random")
+    {
+        std::srand(0);
+        const auto r = []() {
+            return std::rand() / float(RAND_MAX);
+        };
+        for (auto i = 0u; i < 1000; ++i) {
+            const auto smallest = r();
+            dgmr::marching_steps::Array<8> arr(smallest);
+            for (auto j = 0u; j < 20; ++j) {
+                auto values = whack::Array<float, 4> { r() * 0.3f, r() * 0.3f, r() * 0.3f, r() * 0.3f };
+                auto s = 0.f;
+                for (auto& v : values) {
+                    s += v;
+                    v = s;
+                }
+                arr.add(values);
+                CHECK(arr[0] == smallest);
+                auto last = smallest;
+                for (auto k = 0u; k < arr.size(); ++k) {
+                    auto d = arr[k];
+                    CHECK(d >= last);
+                    last = d;
+                }
+            }
+        }
+    }
+
+    SECTION("bulk add to empty, previously crashing")
+    {
+        dgmr::marching_steps::Array<4> arr(5);
+
+        const auto new_arr = whack::Array<float, 6> { 0, 1, 2, 3, 4, 6 };
+        arr.add(new_arr);
+        CHECK(arr.size() == 2);
+        CHECK(arr[0] == 5.0f);
+        CHECK(arr[1] == 6.0f);
+    }
+
+    SECTION("bulk add to partially empty")
+    {
+        dgmr::marching_steps::Array<4> arr(0.5);
+        arr.add(1.5);
+        arr.add(2.5);
+
+        const auto new_arr = whack::Array<float, 6> { 0, 1, 2, 3, 4, 5 };
+        arr.add(new_arr);
+        CHECK(arr.size() == 4);
+        CHECK(arr[0] == 0.5f);
+        CHECK(arr[1] == 1.0f);
+        CHECK(arr[2] == 1.5f);
+        CHECK(arr[3] == 2.0f);
+    }
+
+    SECTION("bulk add to full")
+    {
+        dgmr::marching_steps::Array<4> arr(0.5);
+        arr.add(1.5);
+        arr.add(2.5);
+        arr.add(3.5);
+
+        arr.add(whack::Array<float, 6> { 0, 1, 2, 3, 4, 5 });
+        CHECK(arr.size() == 4);
+        CHECK(arr[0] == 0.5f);
+        CHECK(arr[1] == 1.0f);
+        CHECK(arr[2] == 1.5f);
+        CHECK(arr[3] == 2.0f);
+
+        arr.add(whack::Array<float, 6> { .0, .2, .4, .6, .8, .9 });
+        CHECK(arr.size() == 4);
+        CHECK(arr[0] == 0.5f);
+        CHECK(arr[1] == 0.6f);
+        CHECK(arr[2] == 0.8f);
+        CHECK(arr[3] == 0.9f);
+
+        arr.add(whack::Array<float, 6> { 1.0, 1.2, 1.4, 1.6, 1.8, 1.9 });
+        CHECK(arr.size() == 4);
+        CHECK(arr[0] == 0.5f);
+        CHECK(arr[1] == 0.6f);
+        CHECK(arr[2] == 0.8f);
+        CHECK(arr[3] == 0.9f);
+    }
+
+    SECTION("bulk add to full, previously crashing")
+    {
+        dgmr::marching_steps::Array<4> arr(5);
+        arr.add(5.5);
+        arr.add(6.5);
+        arr.add(7.5);
+
+        arr.add(whack::Array<float, 6> { 0, 1, 2, 3, 4, 10 });
+        CHECK(arr.size() == 4);
+        CHECK(arr[0] == 5.0f);
+        CHECK(arr[1] == 5.5f);
+        CHECK(arr[2] == 6.5f);
+        CHECK(arr[3] == 7.5f);
+
+        arr.add(whack::Array<float, 6> { 0, 1, 2, 3, 4, 7 });
+        CHECK(arr.size() == 4);
+        CHECK(arr[0] == 5.0f);
+        CHECK(arr[1] == 5.5f);
+        CHECK(arr[2] == 6.5f);
+        CHECK(arr[3] == 7.0f);
+
+        arr.add(whack::Array<float, 6> { 0, 1, 2, 3, 6, 7 });
+        CHECK(arr.size() == 4);
+        CHECK(arr[0] == 5.0f);
+        CHECK(arr[1] == 5.5f);
+        CHECK(arr[2] == 6.0f);
+        CHECK(arr[3] == 6.5f);
+
+        arr.add(whack::Array<float, 6> { 0, 1, 2, 5.1, 6, 7 });
+        CHECK(arr.size() == 4);
+        CHECK(arr[0] == 5.0f);
+        CHECK(arr[1] == 5.1f);
+        CHECK(arr[2] == 5.5f);
+        CHECK(arr[3] == 6.0f);
+
+        arr.add(whack::Array<float, 8> { 0, 1, 2, 5.01, 5.02, 5.03, 5.04, 5.05 });
+        CHECK(arr.size() == 4);
+        CHECK(arr[0] == 5.0f);
+        CHECK(arr[1] == 5.01f);
+        CHECK(arr[2] == 5.02f);
+        CHECK(arr[3] == 5.03f);
+    }
 }
 
 TEST_CASE("dgmr marching step bins")

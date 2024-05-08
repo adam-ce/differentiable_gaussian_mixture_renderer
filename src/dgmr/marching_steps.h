@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <gcem.hpp>
 #include <stroke/scalar_functions.h>
 #include <stroke/utility.h>
 #include <whack/array.h>
@@ -56,6 +57,82 @@ public:
                 break;
         }
     }
+
+    template <unsigned n_values>
+    STROKE_DEVICES_INLINE void add(const whack::Array<float, n_values>& values)
+    {
+        auto v_idx = 0u;
+        for (auto v : values) {
+            if (v >= m_data[0])
+                break;
+            ++v_idx;
+        }
+
+        while (m_size != max_size && v_idx < values.size()) {
+            assert(v_idx < values.size());
+            add(values[v_idx++]);
+        }
+
+        if (v_idx >= values.size())
+            return;
+
+        auto d_idx = 0u;
+
+        // for (auto d : m_data) {
+        //     if (d >= values[v_idx])
+        //         break;
+        //     ++d_idx;
+        // }
+        // for (auto d : m_data) {
+        for (auto i = 0u; i < m_size; ++i) {
+            const auto d = m_data[i];
+            assert(v_idx < values.size());
+            if (d >= values[v_idx])
+                break;
+            ++d_idx;
+        }
+
+        whack::Array<float, gcem::min(values.size(), max_size) + 1> tmp;
+        auto t_idx_write = 0u;
+        auto t_idx_read = 0u;
+
+        // const auto original_size = m_size;
+        // auto values_in_tmp = 0;
+        // while (m_size != max_size && (v_idx < values.size() || values_in_tmp > 0) && d_idx < max_size) {
+        //     tmp[t_idx_write++] = m_data[d_idx];
+        //     if (d_idx >= original_size) {
+        //         tmp[t_idx_write - 1] = 1.0f / 0.0f;
+        //     } else {
+        //         ++values_in_tmp;
+        //     }
+        //     if (v_idx >= values.size() || tmp[t_idx_read] < values[v_idx]) {
+        //         m_data[d_idx++] = tmp[t_idx_read++];
+        //         --values_in_tmp;
+        //     } else {
+        //         assert(v_idx < values.size());
+        //         m_data[d_idx++] = values[v_idx++];
+        //         ++m_size;
+        //     }
+        //     t_idx_write = t_idx_write % tmp.size();
+        //     t_idx_read = t_idx_read % tmp.size();
+        // }
+
+        if (m_size != max_size)
+            return;
+
+        for (; d_idx < max_size; ++d_idx) {
+            tmp[t_idx_write++] = m_data[d_idx];
+            if (v_idx >= values.size() || tmp[t_idx_read] < values[v_idx]) {
+                m_data[d_idx] = tmp[t_idx_read++];
+            } else {
+                assert(v_idx < values.size());
+                m_data[d_idx] = values[v_idx++];
+            }
+            t_idx_write = t_idx_write % tmp.size();
+            t_idx_read = t_idx_read % tmp.size();
+        }
+    }
+
     STROKE_DEVICES_INLINE unsigned size() const
     {
         assert(m_size <= max_size);

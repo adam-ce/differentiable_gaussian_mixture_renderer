@@ -389,9 +389,10 @@ dgmr::VolMarcherStatistics dgmr::vol_marcher_forward(VolMarcherForwardData& data
                     // Iterate over all gaussians and take the first config::n_large_steps larger than current_large_step_start
                     marching_steps::Array<config::n_large_steps> bin_borders(current_large_step_start);
                     n_toDo = render_g_range.y - render_g_range.x;
+                    bool done_1 = !inside;
                     for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {
                         // End if entire block votes that it is done rasterizing
-                        const int num_done = __syncthreads_count(done);
+                        const int num_done = __syncthreads_count(done || done_1);
                         if (num_done == render_block_size)
                             break;
 
@@ -407,7 +408,7 @@ dgmr::VolMarcherStatistics dgmr::vol_marcher_forward(VolMarcherForwardData& data
                         }
                         __syncthreads();
 
-                        if (done)
+                        if (done || done_1)
                             continue;
 
                         // Iterate over current batch
@@ -416,6 +417,7 @@ dgmr::VolMarcherStatistics dgmr::vol_marcher_forward(VolMarcherForwardData& data
                             const auto sd = stroke::sqrt(gaussian1d.C);
 
                             if (bin_borders.size() == config::n_large_steps && g_depths(collected_id[j]) > bin_borders[config::n_large_steps - 1]) {
+                                done_1 = true;
                                 break;
                             }
 
@@ -432,12 +434,19 @@ dgmr::VolMarcherStatistics dgmr::vol_marcher_forward(VolMarcherForwardData& data
                             if (bin_borders[0] >= end)
                                 continue;
                             assert(!stroke::isnan(t));
-                            const float delta_t = (sd * config::gaussian_relevance_sigma * 2) / config::n_small_steps;
-                            for (unsigned j = 0; j < config::n_small_steps; ++j) {
+                            const float delta_t = (sd * config::gaussian_relevance_sigma * 2) / (config::n_small_steps - 1);
+                            whack::Array<float, config::n_small_steps> new_borders;
+                            for (float& n : new_borders) {
                                 assert(!stroke::isnan(t));
-                                bin_borders.add(t);
+                                n = t;
                                 t += delta_t;
                             }
+                            bin_borders.add(new_borders);
+                            // for (unsigned j = 0; j < config::n_small_steps; ++j) {
+                            // assert(!stroke::isnan(t));
+                            // bin_borders.add(t);
+                            // t += delta_t;
+                            // }
 
                             // current_large_steps.add(gaussian1d.centre - stroke::sqrt(gaussian1d.C) * 3);
                             // current_large_steps.add(gaussian1d.centre);
