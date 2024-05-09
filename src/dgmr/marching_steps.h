@@ -91,25 +91,19 @@ public:
 
     STROKE_DEVICES_INLINE void put(Entry entry)
     {
-        auto& data = *this; // go through operator[], so we trigger the assert there
-
-        const auto find = [&data](float v, unsigned find_from = 0u) {
-            for (auto i = find_from; i < data.size(); ++i) {
-                const Entry& e = data[i];
+        const auto find = [this](float v, unsigned find_from = 0u) {
+            for (auto i = find_from; i < m_size; ++i) {
+                const Entry& e = m_data[i];
                 if (e.end > v)
                     return i;
             }
-            return data.size();
+            return m_size;
         };
 
         const auto compact = [](whack::Array<Entry, 3> data) {
             if (data[0].delta_t == data[1].delta_t) {
                 data[1].start = data[0].start;
                 data[0].end = data[0].start;
-            }
-            if (data[2].delta_t == data[1].delta_t) {
-                data[1].end = data[2].end;
-                data[2].start = data[2].end;
             }
             return data;
         };
@@ -121,30 +115,31 @@ public:
         unsigned p_s = find(entry.start);
         if (p_s >= m_size) {
             if (p_s < max_size)
-                data[m_size++] = entry;
+                m_data[m_size++] = entry;
             return;
         }
         // assert this is the first entry touched
-        assert(p_s == 0 || data[p_s - 1].end <= entry.start);
-        assert(data[p_s].end >= entry.start);
+        assert(p_s == 0 || m_data[p_s - 1].end <= entry.start);
+        assert(m_data[p_s].end >= entry.start);
 
         unsigned p_e = find(entry.end, p_s);
-        if (p_e < m_size && data[p_e].start < entry.end)
+        if (p_e < m_size && m_data[p_e].start < entry.end)
             ++p_e;
         // assert this entry is the first not touched any more
-        assert(p_e == m_size || data[p_e].start >= entry.end);
+        assert(p_e == m_size || m_data[p_e].start >= entry.end);
         assert(p_e > 0);
-        assert(entry.start <= data[p_e - 1].end);
+        assert(entry.start <= m_data[p_e - 1].end);
 
         whack::Array<Entry, max_size * 55> tmp;
         unsigned tmp_read = 0;
         unsigned tmp_write = 0;
-        auto i = p_s;
+        auto i_read = p_s;
+        auto i_write = p_s;
         unsigned n_added = 0;
-        while (i < p_e + n_added && i < max_size) {
-            tmp[tmp_write++] = data[i];
+        while (i_read < p_e + n_added && i_write < max_size) {
+            tmp[tmp_write++] = m_data[i_read++];
             if (tmp[tmp_read].end <= entry.start) {
-                data[i++] = tmp[tmp_read++];
+                m_data[i_write++] = tmp[tmp_read++];
                 continue;
             }
 
@@ -152,22 +147,25 @@ public:
             const auto new_entries = compact(combined);
             entry = new_entries[2];
             if (new_entries[0].end - new_entries[0].start <= 0) {
-                data[i] = new_entries[1];
+                if (new_entries[1].delta_t == new_entries[2].delta_t) {
+                    entry.start = new_entries[1].start;
+                    continue;
+                }
+                m_data[i_write++] = new_entries[1];
             } else {
-                data[i] = new_entries[0];
-                tmp[--tmp_read] = new_entries[1];
-                if (m_size < max_size) {
-                    ++m_size;
+                m_data[i_write++] = new_entries[0];
+                if (new_entries[1].delta_t == new_entries[2].delta_t) {
+                    entry.start = new_entries[1].start;
+                    continue;
                 }
                 ++n_added;
+                tmp[--tmp_read] = new_entries[1];
             }
-            ++i;
         }
-        if (entry.end - entry.start > 0 && i < max_size) {
-            if (m_size < max_size)
-                ++m_size;
-            data[i] = entry;
+        if (entry.end - entry.start > 0 && i_write < max_size) {
+            m_data[i_write++] = entry;
         }
+        m_size = stroke::min(max_size, i_write + m_size - p_e);
     }
 };
 
