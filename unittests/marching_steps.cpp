@@ -320,6 +320,98 @@ TEST_CASE("dgmr marching step DensityArray")
         // clang-format on
     }
 
+    SECTION("many overlapping over full")
+    {
+        dgmr::marching_steps::DensityArray<16> arr(0.0f);
+        arr.put({ 0.2f, 0.5f, 0.5f });
+        arr.put({ 1.0f, 1.5f, 0.5f });
+        arr.put({ 2.0f, 2.5f, 0.5f });
+        arr.put({ 3.0f, 3.5f, 0.5f });
+        arr.put({ 4.0f, 4.5f, 0.5f });
+        arr.put({ 5.0f, 5.5f, 0.5f });
+        arr.put({ 6.0f, 6.5f, 0.5f });
+        arr.put({ 7.0f, 7.5f, 0.5f });
+        arr.put({ 8.0f, 8.5f, 0.5f });
+        arr.put({ 9.0f, 9.5f, 0.5f });
+        CHECK(arr.size() == 10);
+
+        arr.put({ 0.0f, 10.0f, 1.0f });
+        CHECK(arr.size() == 16);
+
+        // clang-format off
+        CHECK(arr[0].start == 0.0f);
+        CHECK(arr[0].end == 0.2f);
+        CHECK(arr[0].delta_t == 1.0f);
+        
+        CHECK(arr[1].start == 0.2f);
+        CHECK(arr[1].end == 0.5f);
+        CHECK(arr[1].delta_t == 0.5f);
+        
+        CHECK(arr[2].start == 0.5f);
+        CHECK(arr[2].end == 1.0f);
+        CHECK(arr[2].delta_t == 1.0f);
+        
+        
+        CHECK(arr[3].start == 1.0f);
+        CHECK(arr[3].end == 1.5f);
+        CHECK(arr[3].delta_t == 0.5f);
+        
+        CHECK(arr[4].start == 1.5f);
+        CHECK(arr[4].end == 2.0f);
+        CHECK(arr[4].delta_t == 1.0f);
+        
+        
+        CHECK(arr[5].start == 2.0f);
+        CHECK(arr[5].end == 2.5f);
+        CHECK(arr[5].delta_t == 0.5f);
+        
+        CHECK(arr[6].start == 2.5f);
+        CHECK(arr[6].end == 3.0f);
+        CHECK(arr[6].delta_t == 1.0f);
+        
+        
+        CHECK(arr[7].start == 3.0f);
+        CHECK(arr[7].end == 3.5f);
+        CHECK(arr[7].delta_t == 0.5f);
+        
+        CHECK(arr[8].start == 3.5f);
+        CHECK(arr[8].end == 4.0f);
+        CHECK(arr[8].delta_t == 1.0f);
+        
+        
+        CHECK(arr[9].start == 4.0f);
+        CHECK(arr[9].end == 4.5f);
+        CHECK(arr[9].delta_t == 0.5f);
+        
+        CHECK(arr[10].start == 4.5f);
+        CHECK(arr[10].end == 5.0f);
+        CHECK(arr[10].delta_t == 1.0f);
+        
+        
+        CHECK(arr[11].start == 5.0f);
+        CHECK(arr[11].end == 5.5f);
+        CHECK(arr[11].delta_t == 0.5f);
+        
+        CHECK(arr[12].start == 5.5f);
+        CHECK(arr[12].end == 6.0f);
+        CHECK(arr[12].delta_t == 1.0f);
+        
+        
+        CHECK(arr[13].start == 6.0f);
+        CHECK(arr[13].end == 6.5f);
+        CHECK(arr[13].delta_t == 0.5f);
+        
+        CHECK(arr[14].start == 6.5f);
+        CHECK(arr[14].end == 7.0f);
+        CHECK(arr[14].delta_t == 1.0f);
+        
+        
+        CHECK(arr[15].start == 7.0f);
+        CHECK(arr[15].end == 7.5f);
+        CHECK(arr[15].delta_t == 0.5f);
+        // clang-format on
+    }
+
     SECTION("overlapping end not full")
     {
         dgmr::marching_steps::DensityArray<4> arr(0.5f);
@@ -356,6 +448,34 @@ TEST_CASE("dgmr marching step DensityArray")
         CHECK(arr[3].start == 1.8f);
         CHECK(arr[3].end == 2.0f);
         CHECK(arr[3].delta_t == 0.1f);
+    }
+
+    SECTION("splitting in the middle")
+    {
+        dgmr::marching_steps::DensityArray<4> arr(0.5f);
+        arr.put({ 1.0f, 1.5f, 0.5f });
+        arr.put({ 2.0f, 2.5f, 0.5f });
+        arr.put({ 3.0f, 3.5f, 0.5f });
+        arr.put({ 4.0f, 4.5f, 0.5f });
+
+        arr.put({ 2.1f, 2.2f, 0.1f });
+        CHECK(arr.size() == 4);
+
+        CHECK(arr[0].start == 1.0f);
+        CHECK(arr[0].end == 1.5f);
+        CHECK(arr[0].delta_t == 0.5f);
+
+        CHECK(arr[1].start == 2.0f);
+        CHECK(arr[1].end == 2.1f);
+        CHECK(arr[1].delta_t == 0.5f);
+
+        CHECK(arr[2].start == 2.1f);
+        CHECK(arr[2].end == 2.2f);
+        CHECK(arr[2].delta_t == 0.1f);
+
+        CHECK(arr[3].start == 2.2f);
+        CHECK(arr[3].end == 2.5f);
+        CHECK(arr[3].delta_t == 0.5f);
     }
 }
 

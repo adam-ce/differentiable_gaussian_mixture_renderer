@@ -141,7 +141,7 @@ public:
         unsigned tmp_write = 0;
         auto i = p_s;
         unsigned n_added = 0;
-        while (i < p_e + n_added) {
+        while (i < p_e + n_added && i < max_size) {
             tmp[tmp_write++] = data[i];
             if (tmp[tmp_read].end <= entry.start) {
                 data[i++] = tmp[tmp_read++];
@@ -158,13 +158,15 @@ public:
                 tmp[--tmp_read] = new_entries[1];
                 if (m_size < max_size) {
                     ++m_size;
-                    ++n_added;
                 }
+                ++n_added;
             }
             ++i;
         }
-        if (entry.end - entry.start > 0 && m_size < max_size) {
-            data[m_size++] = entry;
+        if (entry.end - entry.start > 0 && i < max_size) {
+            if (m_size < max_size)
+                ++m_size;
+            data[i] = entry;
         }
     }
 };
