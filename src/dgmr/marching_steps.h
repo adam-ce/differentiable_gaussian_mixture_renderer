@@ -26,6 +26,150 @@
 namespace dgmr::marching_steps {
 
 template <unsigned max_size>
+class DensityArray {
+    struct Entry {
+        float start;
+        float end;
+        float delta_t;
+    };
+    unsigned m_size = 0;
+    whack::Array<Entry, max_size> m_data;
+    float m_start;
+
+public:
+    STROKE_DEVICES_INLINE DensityArray(float start)
+        : m_start(start)
+    {
+    }
+    STROKE_DEVICES_INLINE unsigned size() const
+    {
+        return m_size;
+    }
+
+    STROKE_DEVICES_INLINE Entry& operator[](unsigned index)
+    {
+        assert(index < m_size);
+        return m_data[index];
+    }
+
+    STROKE_DEVICES_INLINE const Entry& operator[](unsigned index) const
+    {
+        assert(index < m_size);
+        return m_data[index];
+    }
+
+    STROKE_DEVICES_INLINE static whack::Array<Entry, 3> combine(const Entry& a, const Entry& b)
+    {
+        whack::Array<Entry, 3> tmp;
+        // not overlapping
+        if (a.start < b.start) {
+            tmp[0].start = a.start;
+            tmp[0].end = stroke::min(a.end, b.start);
+            tmp[0].delta_t = a.delta_t;
+        } else {
+            tmp[0].start = b.start;
+            tmp[0].end = stroke::min(b.end, a.start);
+            tmp[0].delta_t = b.delta_t;
+        }
+        if (b.end < a.end) {
+            assert(a.start < b.end);
+            tmp[2].start = b.end; // stroke::max(b.end, a.start);
+            tmp[2].end = a.end;
+            tmp[2].delta_t = a.delta_t;
+        } else {
+            assert(b.start < a.end); // otherwise
+            tmp[2].start = a.end; // stroke::max(a.end, b.start);
+            tmp[2].end = b.end;
+            tmp[2].delta_t = b.delta_t;
+        }
+        // overlapping
+        tmp[1].start = tmp[0].end;
+        tmp[1].end = tmp[2].start;
+        tmp[1].delta_t = stroke::min(a.delta_t, b.delta_t);
+        return tmp;
+    }
+
+    STROKE_DEVICES_INLINE void put(Entry entry)
+    {
+        auto& data = *this; // go through operator[], so we trigger the assert there
+
+        const auto find = [&data](float v, unsigned find_from = 0u) {
+            for (auto i = find_from; i < data.size(); ++i) {
+                const Entry& e = data[i];
+                if (e.end > v)
+                    return i;
+            }
+            return data.size();
+        };
+
+        const auto compact = [](whack::Array<Entry, 3> data) {
+            if (data[0].delta_t == data[1].delta_t) {
+                data[1].start = data[0].start;
+                data[0].end = data[0].start;
+            }
+            if (data[2].delta_t == data[1].delta_t) {
+                data[1].end = data[2].end;
+                data[2].start = data[2].end;
+            }
+            return data;
+        };
+
+        if (entry.end < m_start)
+            return;
+        entry.start = stroke::max(m_start, entry.start);
+
+        unsigned p_s = find(entry.start);
+        if (p_s >= m_size) {
+            if (p_s < max_size)
+                data[m_size++] = entry;
+            return;
+        }
+        // assert this is the first entry touched
+        assert(p_s == 0 || data[p_s - 1].end <= entry.start);
+        assert(data[p_s].end >= entry.start);
+
+        unsigned p_e = find(entry.end, p_s);
+        if (p_e < m_size && data[p_e].start < entry.end)
+            ++p_e;
+        // assert this entry is the first not touched any more
+        assert(p_e == m_size || data[p_e].start >= entry.end);
+        assert(p_e > 0);
+        assert(entry.start <= data[p_e - 1].end);
+
+        whack::Array<Entry, max_size * 55> tmp;
+        unsigned tmp_read = 0;
+        unsigned tmp_write = 0;
+        auto i = p_s;
+        unsigned n_added = 0;
+        while (i < p_e + n_added) {
+            tmp[tmp_write++] = data[i];
+            if (tmp[tmp_read].end <= entry.start) {
+                data[i++] = tmp[tmp_read++];
+                continue;
+            }
+
+            const auto combined = combine(tmp[tmp_read++], entry);
+            const auto new_entries = compact(combined);
+            entry = new_entries[2];
+            if (new_entries[0].end - new_entries[0].start <= 0) {
+                data[i] = new_entries[1];
+            } else {
+                data[i] = new_entries[0];
+                tmp[--tmp_read] = new_entries[1];
+                if (m_size < max_size) {
+                    ++m_size;
+                    ++n_added;
+                }
+            }
+            ++i;
+        }
+        if (entry.end - entry.start > 0 && m_size < max_size) {
+            data[m_size++] = entry;
+        }
+    }
+};
+
+template <unsigned max_size>
 class Array {
     static_assert(max_size >= 2);
     whack::Array<float, max_size> m_data = {};
