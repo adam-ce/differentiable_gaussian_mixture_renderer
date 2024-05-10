@@ -487,7 +487,7 @@ TEST_CASE("dgmr marching step DensityArray")
         arr.put({ 4.0f, 4.5f, 0.5f });
 
         arr.put({ 2.1f, 2.2f, 0.1f });
-        CHECK(arr.size() == 4);
+        CHECK(arr.size() == 6);
 
         CHECK(arr[0].start == 1.0f);
         CHECK(arr[0].end == 1.5f);
@@ -514,7 +514,7 @@ TEST_CASE("dgmr marching step DensityArray")
         CHECK(arr[5].delta_t == 0.5f);
     }
 
-    SECTION("new new element merges several old ones")
+    SECTION("new element merges several old ones")
     {
         dgmr::marching_steps::DensityArray<16> arr(0.0f);
         arr.put({ 0.2f, 0.5f, 0.5f });

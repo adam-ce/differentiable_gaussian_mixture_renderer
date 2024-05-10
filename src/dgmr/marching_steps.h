@@ -130,14 +130,17 @@ public:
         assert(p_e > 0);
         assert(entry.start <= m_data[p_e - 1].end);
 
-        whack::Array<Entry, max_size * 55> tmp;
+        whack::Array<Entry, max_size * 2> tmp;
         unsigned tmp_read = 0;
         unsigned tmp_write = 0;
         auto i_read = p_s;
         auto i_write = p_s;
         unsigned n_added = 0;
         while (i_read < p_e + n_added && i_write < max_size) {
-            tmp[tmp_write++] = m_data[i_read++];
+            if (i_read < m_size)
+                tmp[tmp_write++] = m_data[i_read++];
+            if (tmp_read >= tmp_write)
+                break;
             if (tmp[tmp_read].end <= entry.start) {
                 m_data[i_write++] = tmp[tmp_read++];
                 continue;
@@ -163,9 +166,15 @@ public:
             }
         }
         if (entry.end - entry.start > 0 && i_write < max_size) {
+            if (i_read < m_size)
+                tmp[tmp_write++] = m_data[i_read++];
             m_data[i_write++] = entry;
         }
-        m_size = stroke::min(max_size, i_write + m_size - p_e);
+        const auto remaining = tmp_write - tmp_read; // stroke::min(max_size, i_write + m_size - p_e) - m_size;
+        for (auto i = 0u; i < remaining && i_write < max_size; ++i) {
+            m_data[i_write++] = tmp[tmp_read++];
+        }
+        m_size = i_write + m_size - i_read;
     }
 };
 
