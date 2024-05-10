@@ -170,8 +170,9 @@ public:
                 tmp[tmp_write++] = m_data[i_read++];
             m_data[i_write++] = entry;
         }
-        const auto remaining = tmp_write - tmp_read; // stroke::min(max_size, i_write + m_size - p_e) - m_size;
-        for (auto i = 0u; i < remaining && i_write < max_size; ++i) {
+        while (tmp_write - tmp_read && i_write < max_size) {
+            if (i_read < m_size)
+                tmp[tmp_write++] = m_data[i_read++];
             m_data[i_write++] = tmp[tmp_read++];
         }
         m_size = i_write + m_size - i_read;

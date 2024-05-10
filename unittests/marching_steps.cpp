@@ -533,6 +533,110 @@ TEST_CASE("dgmr marching step DensityArray")
         CHECK(arr[0].delta_t == 0.1f);
     }
 
+    SECTION("new element merges several old ones in the middle")
+    {
+        dgmr::marching_steps::DensityArray<16> arr(0.0f);
+        arr.put({ 0.2f, 0.5f, 0.5f });
+        arr.put({ 1.0f, 1.5f, 0.5f });
+        arr.put({ 2.0f, 2.5f, 0.5f });
+        arr.put({ 3.0f, 3.5f, 0.5f });
+        arr.put({ 4.0f, 4.5f, 0.5f });
+        arr.put({ 5.0f, 5.5f, 0.5f });
+        arr.put({ 6.0f, 6.5f, 0.5f });
+        CHECK(arr.size() == 7);
+
+        arr.put({ 0.3f, 2.3f, 0.1f });
+        CHECK(arr.size() == 7);
+
+        CHECK(arr[0].start == 0.2f);
+        CHECK(arr[0].end == 0.3f);
+        CHECK(arr[0].delta_t == 0.5f);
+
+        CHECK(arr[1].start == 0.3f);
+        CHECK(arr[1].end == 2.3f);
+        CHECK(arr[1].delta_t == 0.1f);
+
+        CHECK(arr[2].start == 2.3f);
+        CHECK(arr[2].end == 2.5f);
+        CHECK(arr[2].delta_t == 0.5f);
+
+        CHECK(arr[3].start == 3.0f);
+        CHECK(arr[3].end == 3.5f);
+        CHECK(arr[3].delta_t == 0.5f);
+
+        CHECK(arr[4].start == 4.0f);
+        CHECK(arr[4].end == 4.5f);
+        CHECK(arr[4].delta_t == 0.5f);
+
+        CHECK(arr[5].start == 5.0f);
+        CHECK(arr[5].end == 5.5f);
+        CHECK(arr[5].delta_t == 0.5f);
+
+        CHECK(arr[6].start == 6.0f);
+        CHECK(arr[6].end == 6.5f);
+        CHECK(arr[6].delta_t == 0.5f);
+    }
+
+    SECTION("new element merges several old ones in the middle 2")
+    {
+        dgmr::marching_steps::DensityArray<16> arr(0.0f);
+        arr.put({ 0.2f, 0.5f, 0.5f });
+        arr.put({ 1.0f, 1.5f, 0.5f });
+        arr.put({ 2.0f, 2.5f, 0.5f });
+        arr.put({ 3.0f, 3.5f, 0.5f });
+        arr.put({ 4.0f, 4.5f, 0.5f });
+        arr.put({ 5.0f, 5.5f, 0.5f });
+        arr.put({ 6.0f, 6.5f, 0.5f });
+        CHECK(arr.size() == 7);
+
+        arr.put({ 0.1f, 2.7f, 0.1f });
+        CHECK(arr.size() == 5);
+
+        CHECK(arr[0].start == 0.1f);
+        CHECK(arr[0].end == 2.7f);
+        CHECK(arr[0].delta_t == 0.1f);
+
+        CHECK(arr[1].start == 3.0f);
+        CHECK(arr[1].end == 3.5f);
+        CHECK(arr[1].delta_t == 0.5f);
+
+        CHECK(arr[2].start == 4.0f);
+        CHECK(arr[2].end == 4.5f);
+        CHECK(arr[2].delta_t == 0.5f);
+
+        CHECK(arr[3].start == 5.0f);
+        CHECK(arr[3].end == 5.5f);
+        CHECK(arr[3].delta_t == 0.5f);
+
+        CHECK(arr[4].start == 6.0f);
+        CHECK(arr[4].end == 6.5f);
+        CHECK(arr[4].delta_t == 0.5f);
+    }
+
+    SECTION("new element merges several old ones in the middle 3")
+    {
+        dgmr::marching_steps::DensityArray<16> arr(0.0f);
+        arr.put({ 0.2f, 0.5f, 0.5f });
+        arr.put({ 1.0f, 1.5f, 0.5f });
+        arr.put({ 2.0f, 2.5f, 0.5f });
+        arr.put({ 3.0f, 3.5f, 0.5f });
+        arr.put({ 4.0f, 4.5f, 0.5f });
+        arr.put({ 5.0f, 5.5f, 0.5f });
+        arr.put({ 6.0f, 6.5f, 0.5f });
+        CHECK(arr.size() == 7);
+
+        arr.put({ 0.1f, 5.7f, 0.1f });
+        CHECK(arr.size() == 2);
+
+        CHECK(arr[0].start == 0.1f);
+        CHECK(arr[0].end == 5.7f);
+        CHECK(arr[0].delta_t == 0.1f);
+
+        CHECK(arr[1].start == 6.0f);
+        CHECK(arr[1].end == 6.5f);
+        CHECK(arr[1].delta_t == 0.5f);
+    }
+
     SECTION("new new element merges several old ones 2")
     {
         dgmr::marching_steps::DensityArray<16> arr(0.0f);
