@@ -235,6 +235,57 @@ TEST_CASE("dgmr marching step DensityArray")
         CHECK(arr[3].end == 4.0f);
         CHECK(arr[3].delta_t == 0.5f);
     }
+
+    SECTION("non-overlapping middle")
+    {
+        dgmr::marching_steps::DensityArray<4> arr(0.5f);
+        CHECK(arr.size() == 0);
+        arr.put({ 0.0f, 0.9f, 0.8f });
+        arr.put({ 4.0f, 5.0f, 1.5f });
+
+        arr.put({ 1.0f, 2.0f, 0.5f });
+        CHECK(arr.size() == 3);
+        CHECK(arr[0].start == 0.5f);
+        CHECK(arr[0].end == 0.9f);
+        CHECK(arr[0].delta_t == 0.8f);
+        CHECK(arr[1].start == 1.0f);
+        CHECK(arr[1].end == 2.0f);
+        CHECK(arr[1].delta_t == 0.5f);
+        CHECK(arr[2].start == 4.0f);
+        CHECK(arr[2].end == 5.0f);
+        CHECK(arr[2].delta_t == 1.5f);
+
+        arr.put({ 3.0f, 4.0f, 0.5f });
+        CHECK(arr.size() == 4);
+        CHECK(arr[0].start == 0.5f);
+        CHECK(arr[0].end == 0.9f);
+        CHECK(arr[0].delta_t == 0.8f);
+        CHECK(arr[1].start == 1.0f);
+        CHECK(arr[1].end == 2.0f);
+        CHECK(arr[1].delta_t == 0.5f);
+        CHECK(arr[2].start == 3.0f);
+        CHECK(arr[2].end == 4.0f);
+        CHECK(arr[2].delta_t == 0.5f);
+        CHECK(arr[3].start == 4.0f);
+        CHECK(arr[3].end == 5.0f);
+        CHECK(arr[3].delta_t == 1.5f);
+
+        arr.put({ 2.0f, 2.5f, 0.9f });
+        CHECK(arr.size() == 4);
+        CHECK(arr[0].start == 0.5f);
+        CHECK(arr[0].end == 0.9f);
+        CHECK(arr[0].delta_t == 0.8f);
+        CHECK(arr[1].start == 1.0f);
+        CHECK(arr[1].end == 2.0f);
+        CHECK(arr[1].delta_t == 0.5f);
+        CHECK(arr[2].start == 2.0f);
+        CHECK(arr[2].end == 2.5f);
+        CHECK(arr[2].delta_t == 0.9f);
+        CHECK(arr[3].start == 3.0f);
+        CHECK(arr[3].end == 4.0f);
+        CHECK(arr[3].delta_t == 0.5f);
+    }
+
     SECTION("non-overlapping start")
     {
         dgmr::marching_steps::DensityArray<4> arr(0.5f);
@@ -805,6 +856,39 @@ TEST_CASE("dgmr marching step DensityArray")
         CHECK(arr[3].start == 3.0f);
         CHECK(arr[3].end == 3.5f);
         CHECK(arr[3].delta_t == 0.5f);
+    }
+
+    SECTION("randomised")
+    {
+        std::srand(0);
+        const auto r = []() {
+            return float(std::rand()) / float(RAND_MAX);
+        };
+        for (auto i = 0u; i < 1000; ++i) {
+            const auto smallest = r();
+            dgmr::marching_steps::DensityArray<8> arr(smallest);
+            for (auto j = 0u; j < 20; ++j) {
+                auto values = whack::Array<float, 4> { r() * 0.3f, r() * 0.3f, r() * 0.3f, r() * 0.3f };
+                auto s = 0.f;
+                for (auto& v : values) {
+                    s += v;
+                    v = s;
+                }
+                const auto start = r() * 10.0f;
+                const auto end = start + r();
+                arr.put({ start, end, r() });
+                if (arr.size()) {
+                    CHECK(arr[0].start >= smallest);
+                    CHECK(arr[0].start < arr[0].end);
+                }
+                for (auto k = 1u; k < arr.size(); ++k) {
+                    const auto& last = arr[k - 1];
+                    const auto& curr = arr[k];
+                    CHECK(curr.start < curr.end);
+                    CHECK(last.end <= curr.start);
+                }
+            }
+        }
     }
 }
 
