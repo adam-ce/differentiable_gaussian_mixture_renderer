@@ -127,8 +127,7 @@ public:
             ++p_e;
         // assert this entry is the first not touched any more
         assert(p_e == m_size || m_data[p_e].start >= entry.end);
-        assert(p_e > 0);
-        assert(entry.start <= m_data[p_e - 1].end);
+        assert(p_e == 0 || entry.start <= m_data[p_e - 1].end);
 
         whack::Array<Entry, max_size * 2> tmp;
         unsigned tmp_read = 0;
