@@ -143,6 +143,10 @@ public:
                 m_data[i_write++] = tmp[tmp_read++];
                 continue;
             }
+            if (tmp[tmp_read].start >= entry.end) {
+                m_data[i_write++] = entry;
+                break;
+            }
 
             const auto combined = combine(tmp[tmp_read++], entry);
             const auto new_entries = compact(combined);
