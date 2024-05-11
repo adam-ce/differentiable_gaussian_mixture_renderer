@@ -144,7 +144,6 @@ public:
                 continue;
             }
             if (tmp[tmp_read].start >= entry.end) {
-                m_data[i_write++] = entry;
                 break;
             }
 

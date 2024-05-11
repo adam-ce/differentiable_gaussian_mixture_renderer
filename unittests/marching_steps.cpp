@@ -858,22 +858,54 @@ TEST_CASE("dgmr marching step DensityArray")
         CHECK(arr[3].delta_t == 0.5f);
     }
 
+    SECTION("new element envelopse old with higher delta (used to crash)")
+    {
+        dgmr::marching_steps::DensityArray<8> arr(0.0f);
+        arr.put({ 1, 2, 1 });
+        arr.put({ 3, 4, 1 });
+        arr.put({ 5, 6, 1 });
+
+        arr.put({ 0.5, 4.5, 2 });
+
+        CHECK(arr.size() == 6);
+
+        CHECK(arr[0].start == 0.5f);
+        CHECK(arr[0].end == 1);
+        CHECK(arr[0].delta_t == 2);
+
+        CHECK(arr[1].start == 1);
+        CHECK(arr[1].end == 2);
+        CHECK(arr[1].delta_t == 1);
+
+        CHECK(arr[2].start == 2);
+        CHECK(arr[2].end == 3);
+        CHECK(arr[2].delta_t == 2);
+
+        CHECK(arr[3].start == 3);
+        CHECK(arr[3].end == 4);
+        CHECK(arr[3].delta_t == 1);
+
+        CHECK(arr[4].start == 4);
+        CHECK(arr[4].end == 4.5f);
+        CHECK(arr[4].delta_t == 2);
+
+        CHECK(arr[5].start == 5);
+        CHECK(arr[5].end == 6);
+        CHECK(arr[5].delta_t == 1);
+    }
+
     SECTION("randomised")
     {
         std::srand(0);
         const auto r = []() {
             return float(std::rand()) / float(RAND_MAX);
         };
-        for (auto i = 0u; i < 1000; ++i) {
+        for (auto i = 0u; i < 10000; ++i) {
             const auto smallest = r();
             dgmr::marching_steps::DensityArray<8> arr(smallest);
             for (auto j = 0u; j < 20; ++j) {
-                auto values = whack::Array<float, 4> { r() * 0.3f, r() * 0.3f, r() * 0.3f, r() * 0.3f };
-                auto s = 0.f;
-                for (auto& v : values) {
-                    s += v;
-                    v = s;
-                }
+                // if (i == 1395 && j == 3)
+                // printf(".\n");
                 const auto start = r() * 10.0f;
                 const auto end = start + r();
                 arr.put({ start, end, r() });
@@ -884,6 +916,7 @@ TEST_CASE("dgmr marching step DensityArray")
                 for (auto k = 1u; k < arr.size(); ++k) {
                     const auto& last = arr[k - 1];
                     const auto& curr = arr[k];
+                    CHECK((last.start != curr.start || last.end != curr.end || last.delta_t != curr.delta_t));
                     CHECK(curr.start < curr.end);
                     CHECK(last.end <= curr.start);
                 }
