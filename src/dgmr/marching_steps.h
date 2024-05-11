@@ -121,6 +121,8 @@ public:
         if (p_s >= m_size) {
             if (p_s < max_size)
                 m_data[m_size++] = entry;
+            else
+                m_end = entry.start;
             return;
         }
         // assert this is the first entry touched

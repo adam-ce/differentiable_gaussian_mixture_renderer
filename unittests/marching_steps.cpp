@@ -900,7 +900,7 @@ TEST_CASE("dgmr marching step DensityArray")
         const auto r = []() {
             return float(std::rand()) / float(RAND_MAX);
         };
-        for (auto i = 0u; i < 10000; ++i) {
+        for (auto i = 0u; i < 100000; ++i) {
             const auto smallest = r();
             dgmr::marching_steps::DensityArray<8> arr(smallest);
             std::vector<dgmr::marching_steps::DensityEntry> entries;
@@ -924,9 +924,9 @@ TEST_CASE("dgmr marching step DensityArray")
                 return 1.0f / 0.0f;
             };
 
-            for (auto j = 0u; j < 20; ++j) {
-                // if (i == 1395 && j == 3)
-                // printf(".\n");
+            for (auto j = 0u; j < 100; ++j) {
+                if (i == 73256 && j == 6)
+                    printf(".\n");
                 const auto start = r() * 10.0f;
                 const auto end = start + r();
                 entries.push_back({ start, end, r() });
@@ -948,8 +948,8 @@ TEST_CASE("dgmr marching step DensityArray")
                 // check correctness
                 if (arr.size() == 0)
                     continue;
-                for (auto l = 0u; l < 20; ++l) {
-                    const auto t = r() * (arr[arr.size() - 1].end - smallest) + smallest;
+                for (auto l = 0u; l < 50; ++l) {
+                    const auto t = r() * (arr[arr.size() - 1].end - smallest - 0.00001f) + smallest;
                     const auto r = get_real_delta_t_at(t);
                     const auto c = get_computed_delta_t_at(t);
                     if (c != r)
