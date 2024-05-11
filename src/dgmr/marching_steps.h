@@ -25,16 +25,18 @@
 
 namespace dgmr::marching_steps {
 
+struct DensityEntry {
+    float start;
+    float end;
+    float delta_t;
+};
+
 template <unsigned max_size>
 class DensityArray {
-    struct Entry {
-        float start;
-        float end;
-        float delta_t;
-    };
     unsigned m_size = 0;
-    whack::Array<Entry, max_size> m_data;
+    whack::Array<DensityEntry, max_size> m_data;
     float m_start;
+    float m_end = 1.f / 0.f;
 
 public:
     STROKE_DEVICES_INLINE DensityArray(float start)
@@ -46,21 +48,21 @@ public:
         return m_size;
     }
 
-    STROKE_DEVICES_INLINE Entry& operator[](unsigned index)
+    STROKE_DEVICES_INLINE DensityEntry& operator[](unsigned index)
     {
         assert(index < m_size);
         return m_data[index];
     }
 
-    STROKE_DEVICES_INLINE const Entry& operator[](unsigned index) const
+    STROKE_DEVICES_INLINE const DensityEntry& operator[](unsigned index) const
     {
         assert(index < m_size);
         return m_data[index];
     }
 
-    STROKE_DEVICES_INLINE static whack::Array<Entry, 3> combine(const Entry& a, const Entry& b)
+    STROKE_DEVICES_INLINE static whack::Array<DensityEntry, 3> combine(const DensityEntry& a, const DensityEntry& b)
     {
-        whack::Array<Entry, 3> tmp;
+        whack::Array<DensityEntry, 3> tmp;
         // not overlapping
         if (a.start < b.start) {
             tmp[0].start = a.start;
@@ -89,18 +91,18 @@ public:
         return tmp;
     }
 
-    STROKE_DEVICES_INLINE void put(Entry entry)
+    STROKE_DEVICES_INLINE void put(DensityEntry entry)
     {
         const auto find = [this](float v, unsigned find_from = 0u) {
             for (auto i = find_from; i < m_size; ++i) {
-                const Entry& e = m_data[i];
+                const DensityEntry& e = m_data[i];
                 if (e.end > v)
                     return i;
             }
             return m_size;
         };
 
-        const auto compact = [](whack::Array<Entry, 3> data) {
+        const auto compact = [](whack::Array<DensityEntry, 3> data) {
             if (data[0].delta_t == data[1].delta_t) {
                 data[1].start = data[0].start;
                 data[0].end = data[0].start;
@@ -108,9 +110,12 @@ public:
             return data;
         };
 
-        if (entry.end < m_start)
+        if (entry.end <= m_start)
+            return;
+        if (entry.start >= m_end)
             return;
         entry.start = stroke::max(m_start, entry.start);
+        entry.end = stroke::min(m_end, entry.end);
 
         unsigned p_s = find(entry.start);
         if (p_s >= m_size) {
@@ -128,7 +133,7 @@ public:
         // assert this entry is the first not touched any more
         assert(p_e == m_size || m_data[p_e].start >= entry.end);
 
-        whack::Array<Entry, max_size * 2> tmp;
+        whack::Array<DensityEntry, max_size * 2> tmp;
         unsigned tmp_read = 0;
         unsigned tmp_write = 0;
         auto i_read = p_s;
@@ -177,6 +182,9 @@ public:
             m_data[i_write++] = tmp[tmp_read++];
         }
         m_size = i_write + m_size - i_read;
+
+        if (m_size == max_size)
+            m_end = stroke::min(m_end, m_data[m_size - 1].end);
     }
 };
 

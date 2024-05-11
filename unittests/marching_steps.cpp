@@ -903,22 +903,57 @@ TEST_CASE("dgmr marching step DensityArray")
         for (auto i = 0u; i < 10000; ++i) {
             const auto smallest = r();
             dgmr::marching_steps::DensityArray<8> arr(smallest);
+            std::vector<dgmr::marching_steps::DensityEntry> entries;
+
+            const auto get_real_delta_t_at = [&](float t) {
+                auto delta_t = 1.f / 0.f;
+                for (const auto& e : entries) {
+                    if (e.start <= t && t < e.end)
+                        delta_t = stroke::min(delta_t, e.delta_t);
+                }
+                return delta_t;
+            };
+
+            const auto get_computed_delta_t_at = [&](float t) {
+                for (auto i = 0u; i < arr.size(); ++i) {
+                    const auto& e = arr[i];
+                    if (e.start <= t && t < e.end) {
+                        return e.delta_t;
+                    }
+                }
+                return 1.0f / 0.0f;
+            };
+
             for (auto j = 0u; j < 20; ++j) {
                 // if (i == 1395 && j == 3)
                 // printf(".\n");
                 const auto start = r() * 10.0f;
                 const auto end = start + r();
-                arr.put({ start, end, r() });
+                entries.push_back({ start, end, r() });
+                arr.put(entries.back());
                 if (arr.size()) {
                     CHECK(arr[0].start >= smallest);
                     CHECK(arr[0].start < arr[0].end);
                 }
+
+                // check validity
                 for (auto k = 1u; k < arr.size(); ++k) {
                     const auto& last = arr[k - 1];
                     const auto& curr = arr[k];
                     CHECK((last.start != curr.start || last.end != curr.end || last.delta_t != curr.delta_t));
                     CHECK(curr.start < curr.end);
                     CHECK(last.end <= curr.start);
+                }
+
+                // check correctness
+                if (arr.size() == 0)
+                    continue;
+                for (auto l = 0u; l < 20; ++l) {
+                    const auto t = r() * (arr[arr.size() - 1].end - smallest) + smallest;
+                    const auto r = get_real_delta_t_at(t);
+                    const auto c = get_computed_delta_t_at(t);
+                    if (c != r)
+                        CHECK(get_real_delta_t_at(t) == get_computed_delta_t_at(t));
                 }
             }
         }
