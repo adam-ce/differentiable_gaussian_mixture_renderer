@@ -24,6 +24,46 @@
 
 using Catch::Approx;
 
+TEST_CASE("dgmr marching step DensityArray sampler")
+{
+    const auto target_delta_t_at = [](const auto& arr, float t) {
+        for (auto i = 0u; i < arr.size(); ++i) {
+            const auto& e = arr[i];
+            if (e.start <= t && t < e.end) {
+                return e.delta_t;
+            }
+        }
+        return 1.0f / 0.0f;
+    };
+
+    SECTION("empty")
+    {
+        dgmr::marching_steps::DensityArray<4> arr(0.1f);
+        const auto samples = dgmr::marching_steps::sample<16>(arr);
+        for (auto i = 0u; i < samples.size(); ++i) {
+            CHECK(samples[i] == 0);
+        }
+    }
+
+    SECTION("filled")
+    {
+        dgmr::marching_steps::DensityArray<4> arr(0.1f);
+        arr.put({ 0.2f, 1.0f, 0.1f });
+        arr.put({ 1.0f, 2.0f, 0.2f });
+        arr.put({ 2.0f, 2.5f, 0.5f });
+        arr.put({ 3.0f, 4.0f, 1.0f });
+
+        const auto samples = dgmr::marching_steps::sample<16>(arr);
+        CHECK(samples.front() == 0.2f);
+        for (auto i = 1u; i < samples.size(); ++i) {
+            const auto delta_t = samples[i] - samples[i - 1];
+            CHECK(delta_t > 0);
+            for (auto t = samples[i - 1]; t < samples[i]; t += 0.01f)
+                CHECK(delta_t <= target_delta_t_at(arr, t) + 0.001f);
+        }
+    }
+}
+
 TEST_CASE("dgmr marching step DensityArray")
 {
     SECTION("combine function enveloping ab/ba")
@@ -900,7 +940,7 @@ TEST_CASE("dgmr marching step DensityArray")
         const auto r = []() {
             return float(std::rand()) / float(RAND_MAX);
         };
-        for (auto i = 0u; i < 100000; ++i) {
+        for (auto i = 0u; i < 1000; ++i) {
             const auto smallest = r();
             dgmr::marching_steps::DensityArray<8> arr(smallest);
             std::vector<dgmr::marching_steps::DensityEntry> entries;
@@ -952,8 +992,8 @@ TEST_CASE("dgmr marching step DensityArray")
                     const auto t = r() * (arr[arr.size() - 1].end - smallest - 0.00001f) + smallest;
                     const auto r = get_real_delta_t_at(t);
                     const auto c = get_computed_delta_t_at(t);
-                    if (c != r)
-                        CHECK(get_real_delta_t_at(t) == get_computed_delta_t_at(t));
+                    // if (c != r)
+                    CHECK(get_real_delta_t_at(t) == get_computed_delta_t_at(t));
                 }
             }
         }

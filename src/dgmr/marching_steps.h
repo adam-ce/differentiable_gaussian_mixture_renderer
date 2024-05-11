@@ -47,6 +47,10 @@ public:
     {
         return m_size;
     }
+    STROKE_DEVICES_INLINE unsigned start() const
+    {
+        return m_start;
+    }
 
     STROKE_DEVICES_INLINE DensityEntry& operator[](unsigned index)
     {
@@ -189,6 +193,26 @@ public:
             m_end = stroke::min(m_end, m_data[m_size - 1].end);
     }
 };
+
+template <unsigned n_samples, unsigned n_density_sections>
+whack::Array<float, n_samples> sample(const DensityArray<n_density_sections>& densities)
+{
+    if (densities.size() == 0)
+        return {};
+
+    whack::Array<float, n_samples> samples;
+    samples[0] = densities[0].start;
+    unsigned current_density_index = 0;
+    for (auto i = 1u; i < samples.size(); ++i) {
+        const auto sample = stroke::min(densities[current_density_index].end, samples[i - 1] + densities[current_density_index].delta_t);
+        samples[i] = sample;
+        if (current_density_index < n_density_sections - 1 && sample == densities[current_density_index].end) {
+            ++current_density_index;
+        }
+    }
+
+    return samples;
+}
 
 template <unsigned max_size>
 class Array {
