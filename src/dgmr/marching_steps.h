@@ -47,9 +47,13 @@ public:
     {
         return m_size;
     }
-    STROKE_DEVICES_INLINE unsigned start() const
+    STROKE_DEVICES_INLINE float start() const
     {
         return m_start;
+    }
+    STROKE_DEVICES_INLINE float end() const
+    {
+        return m_end;
     }
 
     STROKE_DEVICES_INLINE DensityEntry& operator[](unsigned index)
@@ -123,9 +127,9 @@ public:
 
         unsigned p_s = find(entry.start);
         if (p_s >= m_size) {
-            if (p_s < max_size)
+            if (p_s < max_size) {
                 m_data[m_size++] = entry;
-            else
+            } else
                 m_end = entry.start;
             return;
         }
@@ -195,7 +199,7 @@ public:
 };
 
 template <unsigned n_samples, unsigned n_density_sections>
-whack::Array<float, n_samples> sample(const DensityArray<n_density_sections>& densities)
+STROKE_DEVICES_INLINE whack::Array<float, n_samples> sample(const DensityArray<n_density_sections>& densities)
 {
     if (densities.size() == 0)
         return {};
@@ -206,7 +210,7 @@ whack::Array<float, n_samples> sample(const DensityArray<n_density_sections>& de
     for (auto i = 1u; i < samples.size(); ++i) {
         const auto sample = stroke::min(densities[current_density_index].end, samples[i - 1] + densities[current_density_index].delta_t);
         samples[i] = sample;
-        if (current_density_index < n_density_sections - 1 && sample == densities[current_density_index].end) {
+        if (current_density_index < densities.size() - 1 && sample == densities[current_density_index].end) {
             ++current_density_index;
         }
     }
