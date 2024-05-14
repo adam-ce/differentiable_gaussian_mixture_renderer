@@ -59,9 +59,9 @@ struct VolMarcherForwardData {
 namespace vol_marcher {
     struct config {
         static constexpr float filter_kernel_SD = 0.55f;
-        static constexpr unsigned n_large_steps = 16;
-        static constexpr unsigned n_small_steps = 64;
-        static constexpr unsigned n_steps_per_gaussian = 16;
+        static constexpr unsigned n_large_steps = 4;
+        static constexpr unsigned n_small_steps = 32;
+        static constexpr unsigned n_steps_per_gaussian = 32;
         static constexpr float transmission_threshold = 0.005f;
         static constexpr float gaussian_relevance_sigma = 3.f;
         static constexpr float workaround_variance_add_along_ray = 0.000f; // reduces artefacts in small details?
