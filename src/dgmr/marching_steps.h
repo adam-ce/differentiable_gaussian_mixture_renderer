@@ -143,7 +143,7 @@ public:
         // assert this entry is the first not touched any more
         assert(p_e == m_size || m_data[p_e].start >= entry.end);
 
-        whack::Array<DensityEntry, max_size * 2> tmp;
+        whack::Array<DensityEntry, max_size> tmp;
         unsigned tmp_read = 0;
         unsigned tmp_write = 0;
         auto i_read = p_s;
@@ -151,18 +151,18 @@ public:
         unsigned n_added = 0;
         while (i_read < p_e + n_added && i_write < max_size) {
             if (i_read < m_size)
-                tmp[tmp_write++] = m_data[i_read++];
+                tmp[(tmp_write++) % max_size] = m_data[i_read++];
             if (tmp_read >= tmp_write)
                 break;
-            if (tmp[tmp_read].end <= entry.start) {
-                m_data[i_write++] = tmp[tmp_read++];
+            if (tmp[tmp_read % max_size].end <= entry.start) {
+                m_data[i_write++] = tmp[(tmp_read++) % max_size];
                 continue;
             }
-            if (tmp[tmp_read].start >= entry.end) {
+            if (tmp[tmp_read % max_size].start >= entry.end) {
                 break;
             }
 
-            const auto combined = combine(tmp[tmp_read++], entry);
+            const auto combined = combine(tmp[(tmp_read++) % max_size], entry);
             const auto new_entries = compact(combined);
             entry = new_entries[2];
             if (new_entries[0].end - new_entries[0].start <= 0) {
@@ -178,18 +178,18 @@ public:
                     continue;
                 }
                 ++n_added;
-                tmp[--tmp_read] = new_entries[1];
+                tmp[(--tmp_read) % max_size] = new_entries[1];
             }
         }
         if (entry.end - entry.start > 0 && i_write < max_size) {
             if (i_read < m_size)
-                tmp[tmp_write++] = m_data[i_read++];
+                tmp[(tmp_write++) % max_size] = m_data[i_read++];
             m_data[i_write++] = entry;
         }
         while (tmp_write - tmp_read && i_write < max_size) {
             if (i_read < m_size)
-                tmp[tmp_write++] = m_data[i_read++];
-            m_data[i_write++] = tmp[tmp_read++];
+                tmp[(tmp_write++) % max_size] = m_data[i_read++];
+            m_data[i_write++] = tmp[(tmp_read++) % max_size];
         }
         m_size = i_write + m_size - i_read;
 
