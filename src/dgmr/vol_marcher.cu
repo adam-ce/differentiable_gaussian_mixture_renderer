@@ -426,7 +426,7 @@ dgmr::VolMarcherStatistics dgmr::vol_marcher_forward(VolMarcherForwardData& data
                             }
 
                             auto mass_on_ray = gaussian1d.weight * collected_3d_masses[j];
-                            if (mass_on_ray < 0.0001 || mass_on_ray > 1'000)
+                            if (mass_on_ray <= 1.1f / 255.f || mass_on_ray > 1'000)
                                 continue;
                             if (gaussian1d.C + vol_marcher::config::workaround_variance_add_along_ray <= 0)
                                 continue;
