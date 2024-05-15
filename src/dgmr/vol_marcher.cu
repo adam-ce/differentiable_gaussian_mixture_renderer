@@ -483,7 +483,7 @@ dgmr::VolMarcherStatistics dgmr::vol_marcher_forward(VolMarcherForwardData& data
 
                             if (stroke::isnan(gaussian1d.centre))
                                 continue;
-                            if (mass_on_ray < 0.0001 || mass_on_ray > 1'000)
+                            if (mass_on_ray < 1.1f / 255.f || mass_on_ray > 1'000)
                                 continue;
                             if (variance <= 0 || stroke::isnan(variance) || stroke::isnan(mass_on_ray) || mass_on_ray > 100'000)
                                 continue; // todo: shouldn't happen any more after implementing AA?
