@@ -63,6 +63,35 @@ void check_splat(double filter_kernel_size)
     }
 }
 
+template <dgmr::Formulation formulation>
+void check_weight_to_mass()
+{
+    using scalar_t = double;
+    using vec3_t = glm::vec<3, scalar_t>;
+    using cov3_t = stroke::Cov3<scalar_t>;
+    using quat_t = glm::qua<scalar_t>;
+
+    whack::random::HostGenerator<scalar_t> rnd;
+
+    for (int i = 0; i < 10; ++i) {
+        const auto fun = [](const whack::Tensor<scalar_t, 1>& input) {
+            const auto [weight, scales] = stroke::extract<scalar_t, vec3_t>(input);
+            scalar_t g = weight_to_mass<formulation, scalar_t>(weight, scales);
+            return stroke::pack_tensor<scalar_t>(g);
+        };
+
+        const auto fun_grad = [](const whack::Tensor<scalar_t, 1>& input, const whack::Tensor<scalar_t, 1>& grad_output) {
+            const auto [weight, scales] = stroke::extract<scalar_t, vec3_t>(input);
+            const scalar_t grad_incoming = stroke::extract<scalar_t>(grad_output);
+            const auto grad_outgoing = grad::weight_to_mass<formulation, scalar_t>(weight, scales, grad_incoming);
+            return stroke::pack_tensor<scalar_t>(grad_outgoing);
+        };
+
+        const auto test_data = stroke::pack_tensor<scalar_t>(rnd.uniform(), rnd.uniform3());
+        stroke::check_gradient(fun, fun_grad, test_data, scalar_t(0.000002), scalar_t(100)); // i think the gradient is correct, but a bit unstable.
+    }
+}
+
 void check_project()
 {
     using scalar_t = double;
@@ -392,6 +421,23 @@ TEST_CASE("dgmr splat gradient (formulation: Ots, filter kernel size: 0.3)")
 TEST_CASE("dgmr splat gradient (formulation: Ols, filter kernel size: 0.3)")
 {
     check_splat<dgmr::Formulation::Ols>(0.3);
+}
+
+TEST_CASE("dgmr weight_to_mass gradient (formulation: Mass)")
+{
+    check_weight_to_mass<dgmr::Formulation::Mass>();
+}
+TEST_CASE("dgmr weight_to_mass gradient (formulation: Density)")
+{
+    check_weight_to_mass<dgmr::Formulation::Density>();
+}
+TEST_CASE("dgmr weight_to_mass gradient (formulation: Ots)")
+{
+    check_weight_to_mass<dgmr::Formulation::Ots>();
+}
+TEST_CASE("dgmr weight_to_mass gradient (formulation: Ols)")
+{
+    check_weight_to_mass<dgmr::Formulation::Ols>();
 }
 
 TEST_CASE("dgmr project gradient")

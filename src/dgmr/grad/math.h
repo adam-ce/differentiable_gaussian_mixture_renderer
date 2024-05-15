@@ -199,6 +199,57 @@ STROKE_DEVICES_INLINE glm::vec<3, scalar_t> smaller2(const glm::vec<3, scalar_t>
 }
 
 template <dgmr::Formulation formulation, typename scalar_t>
+STROKE_DEVICES_INLINE stroke::grad::TwoGrads<scalar_t, glm::vec<3, scalar_t>>
+weight_to_mass(scalar_t weight, const glm::vec<3, scalar_t>& cov3d_scale, const scalar_t& incoming_grad)
+{
+    using vec3_t = glm::vec<3, scalar_t>;
+    using vec4_t = glm::vec<4, scalar_t>;
+    using mat3_t = glm::mat<3, 3, scalar_t>;
+    using quat_t = glm::qua<scalar_t>;
+
+    switch (formulation) {
+    case Formulation::Opacity: {
+        assert(false);
+        return {};
+    }
+    case Formulation::Mass: {
+        return {
+            incoming_grad, {}
+        };
+    }
+    case Formulation::Density: {
+        const auto intgrl = dgmr::math::integrate_exponential<scalar_t>(cov3d_scale);
+        // return weight * intgrl;
+        const auto grad_intgrl = incoming_grad * weight;
+        const auto grad_cov3d_scale = grad::integrate_exponential<scalar_t>(cov3d_scale, grad_intgrl);
+        return { incoming_grad * intgrl, grad_cov3d_scale };
+    }
+    case Formulation::Ots: {
+        const auto l2 = math::larger2(cov3d_scale);
+        const auto i2prime = dgmr::math::integrate_exponential<scalar_t>(l2);
+        // return weight * i2prime;
+        const auto grad_i2prime = incoming_grad * weight;
+        const auto grad_l2 = grad::integrate_exponential<scalar_t>(l2, grad_i2prime);
+        const auto grad_cov3d_scale = grad::larger2<scalar_t>(cov3d_scale, grad_l2);
+        return { incoming_grad * i2prime, grad_cov3d_scale };
+    }
+    case Formulation::Ols: {
+        // const auto i2prime = math::integrate_exponential(smaller2(cov3d_scale));
+        // return weight * i2prime;
+
+        const auto s2 = math::smaller2(cov3d_scale);
+        const auto i2prime = dgmr::math::integrate_exponential<scalar_t>(s2);
+        // return weight * i2prime;
+        const auto grad_i2prime = incoming_grad * weight;
+        const auto grad_l2 = grad::integrate_exponential<scalar_t>(s2, grad_i2prime);
+        const auto grad_cov3d_scale = grad::smaller2<scalar_t>(cov3d_scale, grad_l2);
+        return { incoming_grad * i2prime, grad_cov3d_scale };
+    }
+    }
+    return {};
+}
+
+template <dgmr::Formulation formulation, typename scalar_t>
 STROKE_DEVICES_INLINE stroke::grad::FourGrads<scalar_t, glm::vec<3, scalar_t>, glm::vec<3, scalar_t>, glm::qua<scalar_t>> splat(
     scalar_t weight,
     const glm::vec<3, scalar_t>& centroid,
