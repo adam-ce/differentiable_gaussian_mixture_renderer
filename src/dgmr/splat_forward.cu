@@ -29,12 +29,6 @@
 namespace {
 using namespace dgmr;
 
-template <typename T>
-T* raw_pointer(const torch::Tensor& tensor)
-{
-    return reinterpret_cast<T*>(tensor.data_ptr());
-}
-
 // from inria:
 
 #define CHECK_CUDA(debug)                                                                                              \
@@ -210,6 +204,7 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
     auto g_point_offsets_data = torch::empty({ n_gaussians, 1 }, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
     auto g_point_offsets = whack::make_tensor_view<uint32_t>(g_point_offsets_data, n_gaussians);
     {
+        using whack::raw_pointer;
         size_t temp_storage_bytes = 0;
         cub::DeviceScan::InclusiveSum(
             nullptr, temp_storage_bytes,
@@ -277,6 +272,7 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
                 }
             });
 
+        using whack::raw_pointer;
         const int bit = getHigherMsb(render_grid_dim.x * render_grid_dim.y);
         // Sort complete list of (duplicated) Gaussian indices by keys
         size_t temp_storage_bytes;
