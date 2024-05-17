@@ -3,7 +3,7 @@ project(dgmr_unittests LANGUAGES CUDA CXX)
 
 FetchContent_Declare(catch2
     GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-    GIT_TAG v3.4.0
+    GIT_TAG v3.6.0
     SOURCE_DIR 		${CMAKE_SOURCE_DIR}/3rdparty/Catch2
 )
 FetchContent_MakeAvailable(catch2)

@@ -122,7 +122,7 @@ uint32_t getHigherMsb(uint32_t n)
 }
 } // namespace
 
-void dgmr::vol_marcher::forward(vol_marcher::ForwardData& data)
+dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardData& data)
 {
     const auto fb_width = data.framebuffer.size<2>();
     const auto fb_height = data.framebuffer.size<1>();
@@ -241,7 +241,7 @@ void dgmr::vol_marcher::forward(vol_marcher::ForwardData& data)
 
     const auto n_render_gaussians = unsigned(g_point_offsets_data.device_vector().back());
     if (n_render_gaussians == 0)
-        return;
+        return {};
 
     // For each instance to be rendered, produce adequate [ tile | depth ] key
     // and corresponding dublicated Gaussian indices to be sorted
@@ -579,4 +579,5 @@ void dgmr::vol_marcher::forward(vol_marcher::ForwardData& data)
                 data.framebuffer(2, pix.y, pix.x) = final_colour.z;
             });
     }
+    return {};
 }

@@ -1,6 +1,6 @@
 /*****************************************************************************
- * Differentiable Gaussian Mixture Renderer
- * Copyright (C) 2023 Adam Celarek
+ * Alpine Terrain Renderer
+ * Copyright (C) 2024 Adam Celarek
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,17 +18,11 @@
 
 #pragma once
 
-#include <torch/types.h>
-#include <whack/TensorView.h>
-
+#include "splat_forward.h"
 #include "vol_marcher.h"
 
-namespace dgmr::vol_marcher {
+namespace dgmr::sibr_interfaces {
+void splat(SplatForwardData& forward_data);
+void vol_march(vol_marcher::ForwardData& forward_data);
 
-struct ForwardCache {
-    torch::Tensor rects_data;
-};
-
-ForwardCache forward(vol_marcher::ForwardData& forward_data);
-
-} // namespace dgmr::vol_marcher
+} // namespace dgmr::sibr_interfaces
