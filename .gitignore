@@ -1,2 +1,3 @@
 /3rdparty/*
 /CMakeLists.txt.user
+/python_bindings/__pycache__/*
