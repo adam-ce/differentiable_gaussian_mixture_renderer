@@ -24,39 +24,35 @@
 
 namespace dgmr {
 
-struct VolMarcherStatistics {
-    unsigned n_rendered = 0;
-};
-
-struct VolMarcherForwardData {
-    whack::TensorView<const glm::vec3, 1> gm_centroids;
-    whack::TensorView<const SHs<3>, 1> gm_sh_params;
-    whack::TensorView<const float, 1> gm_weights;
-    whack::TensorView<const glm::vec3, 1> gm_cov_scales;
-    whack::TensorView<const glm::quat, 1> gm_cov_rotations;
-
-    whack::TensorView<float, 3> framebuffer;
-    glm::mat4 view_matrix = glm::mat4(0);
-    glm::mat4 proj_matrix = glm::mat4(0);
-    glm::vec3 cam_poition = glm::vec3(0);
-    glm::vec3 background = glm::vec3(0);
-    int sh_degree = 3;
-    int sh_max_coeffs = 16;
-    float cov_scale_multiplier = 1.f;
-    float tan_fovy = 0.f;
-    float tan_fovx = 0.f;
-    float max_depth = 20.f;
-    bool debug = true;
-    enum class RenderMode {
-        Full,
-        Bins,
-        Depth
-    };
-    RenderMode debug_render_mode = RenderMode::Full;
-    int debug_render_bin = -1;
-};
-
 namespace vol_marcher {
+    struct ForwardData {
+        whack::TensorView<const glm::vec3, 1> gm_centroids;
+        whack::TensorView<const SHs<3>, 1> gm_sh_params;
+        whack::TensorView<const float, 1> gm_weights;
+        whack::TensorView<const glm::vec3, 1> gm_cov_scales;
+        whack::TensorView<const glm::quat, 1> gm_cov_rotations;
+
+        whack::TensorView<float, 3> framebuffer;
+        glm::mat4 view_matrix = glm::mat4(0);
+        glm::mat4 proj_matrix = glm::mat4(0);
+        glm::vec3 cam_poition = glm::vec3(0);
+        glm::vec3 background = glm::vec3(0);
+        int sh_degree = 3;
+        int sh_max_coeffs = 16;
+        float cov_scale_multiplier = 1.f;
+        float tan_fovy = 0.f;
+        float tan_fovx = 0.f;
+        float max_depth = 20.f;
+        bool debug = true;
+        enum class RenderMode {
+            Full,
+            Bins,
+            Depth
+        };
+        RenderMode debug_render_mode = RenderMode::Full;
+        int debug_render_bin = -1;
+    };
+
     struct config {
         static constexpr float filter_kernel_SD = 0.55f;
         static constexpr unsigned n_large_steps = 4;
@@ -68,7 +64,7 @@ namespace vol_marcher {
         static constexpr Formulation gaussian_mixture_formulation = Formulation::Ots;
     };
 
+    void forward(vol_marcher::ForwardData& forward_data);
 } // namespace vol_marcher
 
-VolMarcherStatistics vol_marcher_forward(VolMarcherForwardData& forward_data);
 } // namespace dgmr

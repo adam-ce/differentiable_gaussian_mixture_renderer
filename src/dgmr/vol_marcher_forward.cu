@@ -24,7 +24,7 @@
 #include "math.h"
 #include "piecewise_linear.h"
 #include "raster_bin_sizers.h"
-#include "vol_marcher_forward.h".h "
+#include "vol_marcher_forward.h"
 
 #include <stroke/gaussian.h>
 #include <stroke/linalg.h>
@@ -122,7 +122,7 @@ uint32_t getHigherMsb(uint32_t n)
 }
 } // namespace
 
-dgmr::VolMarcherStatistics dgmr::vol_marcher_forward(VolMarcherForwardData& data)
+void dgmr::vol_marcher::forward(vol_marcher::ForwardData& data)
 {
     const auto fb_width = data.framebuffer.size<2>();
     const auto fb_height = data.framebuffer.size<1>();
@@ -241,7 +241,7 @@ dgmr::VolMarcherStatistics dgmr::vol_marcher_forward(VolMarcherForwardData& data
 
     const auto n_render_gaussians = unsigned(g_point_offsets_data.device_vector().back());
     if (n_render_gaussians == 0)
-        return { 0 };
+        return;
 
     // For each instance to be rendered, produce adequate [ tile | depth ] key
     // and corresponding dublicated Gaussian indices to be sorted
@@ -517,7 +517,7 @@ dgmr::VolMarcherStatistics dgmr::vol_marcher_forward(VolMarcherForwardData& data
                     }
 
                     switch (data.debug_render_mode) {
-                    case VolMarcherForwardData::RenderMode::Full: {
+                    case vol_marcher::ForwardData::RenderMode::Full: {
                         // quadrature rule for bins
                         for (auto k = 0u; k < bin_eval.size(); ++k) {
                             const auto eval_t = bin_eval[k];
@@ -529,7 +529,7 @@ dgmr::VolMarcherStatistics dgmr::vol_marcher_forward(VolMarcherForwardData& data
                         }
                         break;
                     }
-                    case VolMarcherForwardData::RenderMode::Bins: {
+                    case vol_marcher::ForwardData::RenderMode::Bins: {
                         const auto bin = stroke::min(unsigned(data.debug_render_bin), sample_sections.size() - 1);
                         const auto mass = sum(bin_eval[bin]);
                         // const auto mass = (bin == 0) ? dbg_mass_in_bins_closeed : dbg_mass_in_bins_numerik_1;
@@ -543,7 +543,7 @@ dgmr::VolMarcherStatistics dgmr::vol_marcher_forward(VolMarcherForwardData& data
                         current_transparency = 0;
                         break;
                     }
-                    case VolMarcherForwardData::RenderMode::Depth: {
+                    case vol_marcher::ForwardData::RenderMode::Depth: {
                         const auto bin = stroke::min(unsigned(data.debug_render_bin), sample_sections.size() - 1);
                         const auto distance = sample_sections[bin].end;
                         // const auto bin = stroke::min(unsigned(data.debug_render_bin), current_large_steps.size() - 1);
@@ -579,6 +579,4 @@ dgmr::VolMarcherStatistics dgmr::vol_marcher_forward(VolMarcherForwardData& data
                 data.framebuffer(2, pix.y, pix.x) = final_colour.z;
             });
     }
-
-    return { 0 };
 }
