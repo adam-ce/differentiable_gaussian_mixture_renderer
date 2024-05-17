@@ -24,7 +24,7 @@
 #include "math.h"
 #include "piecewise_linear.h"
 #include "raster_bin_sizers.h"
-#include "vol_marcher.h"
+#include "vol_marcher_forward.h".h "
 
 #include <stroke/gaussian.h>
 #include <stroke/linalg.h>
