@@ -28,7 +28,7 @@ glm::mat4 to_mat4(const torch::Tensor& t)
     assert(t.size(0) == 4);
     assert(t.size(1) == 4);
     const auto h = t.cpu();
-    return { to_vec4(h[0]), to_vec4(h[1]), to_vec4(h[2]), to_vec4(h[3]) };
+    return glm::transpose(glm::mat4(to_vec4(h[0]), to_vec4(h[1]), to_vec4(h[2]), to_vec4(h[3])));
 }
 } // namespace
 
@@ -46,8 +46,7 @@ std::vector<torch::Tensor> vol_marcher_forward(
     unsigned render_height,
     float tan_fovx,
     float tan_fovy,
-    unsigned sh_degree,
-    unsigned sh_max_coeffs)
+    unsigned sh_degree)
 {
     at::cuda::OptionalCUDAGuard device_guard;
     assert(device_of(sh_params) == device_of(weights));
@@ -62,7 +61,7 @@ std::vector<torch::Tensor> vol_marcher_forward(
         device_guard.set_device(device_of(sh_params).value());
     }
 
-    torch::Tensor framebuffer = torch::empty({ render_height, render_width, 3 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
+    torch::Tensor framebuffer = torch::empty({ 3, render_height, render_width }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
 
     const auto n_gaussians = weights.size(0);
 
@@ -79,12 +78,10 @@ std::vector<torch::Tensor> vol_marcher_forward(
     data.cam_poition = to_vec3(cam_position);
     data.background = to_vec3(background);
     data.sh_degree = sh_degree;
-    data.sh_max_coeffs = sh_max_coeffs;
     data.tan_fovx = tan_fovx;
     data.tan_fovy = tan_fovy;
 
-    const auto cache
-        = dgmr::vol_marcher::forward(data);
+    const auto cache = dgmr::vol_marcher::forward(data);
     return { framebuffer,
         cache.depths_data,
         cache.filtered_masses_data,

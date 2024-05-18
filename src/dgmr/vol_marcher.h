@@ -37,7 +37,6 @@ struct ForwardData {
     glm::vec3 cam_poition = glm::vec3(0);
     glm::vec3 background = glm::vec3(0);
     int sh_degree = 3;
-    int sh_max_coeffs = 16;
     float cov_scale_multiplier = 1.f;
     float tan_fovy = 0.f;
     float tan_fovx = 0.f;
