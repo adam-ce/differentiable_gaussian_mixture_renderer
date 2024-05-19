@@ -84,7 +84,6 @@ std::vector<torch::Tensor> vol_marcher_forward(
     data.gm_cov_scales = whack::make_tensor_view<const glm::vec3>(cov_scales, n_gaussians);
     data.gm_cov_rotations = whack::make_tensor_view<const glm::quat>(cov_rotations, n_gaussians);
     data.framebuffer = whack::make_tensor_view<float>(framebuffer, 3, render_height, render_width);
-
     data.view_matrix = to_mat4(view_matrix);
     data.proj_matrix = to_mat4(proj_matrix);
     data.cam_poition = to_vec3(cam_position);
@@ -107,23 +106,72 @@ std::vector<torch::Tensor> vol_marcher_forward(
         };
 }
 
-// std::pair<torch::Tensor, torch::Tensor> convolution_fitting_backward(const torch::Tensor& grad,
-//                                                                      const torch::Tensor& data, const torch::Tensor& kernels, int n_components_fitting,
-//                                                                      const torch::Tensor& fitting, const torch::Tensor& cached_pos_covs, const torch::Tensor& nodeobjs, const torch::Tensor& fitting_subtrees) {
-//     at::cuda::OptionalCUDAGuard device_guard;
-//     if (grad.is_cuda()) {
-//         assert (device_of(grad).has_value());
-//         device_guard.set_device(device_of(grad).value());
-//     }
+std::vector<torch::Tensor> vol_marcher_backward(
+    const torch::Tensor& sh_params,
+    const torch::Tensor& weights,
+    const torch::Tensor& centroids,
+    const torch::Tensor& cov_scales,
+    const torch::Tensor& cov_rotations,
+    const torch::Tensor& view_matrix,
+    const torch::Tensor& proj_matrix,
+    const torch::Tensor& cam_position,
+    const torch::Tensor& background,
+    unsigned render_width,
+    unsigned render_height,
+    float tan_fovx,
+    float tan_fovy,
+    unsigned sh_degree,
+    const torch::Tensor& grad_framebuffer)
+{
+    at::cuda::OptionalCUDAGuard device_guard;
+    assert(device_of(sh_params) == device_of(weights));
+    assert(device_of(sh_params) == device_of(centroids));
+    assert(device_of(sh_params) == device_of(cov_scales));
+    assert(device_of(sh_params) == device_of(cov_rotations));
+    assert(device_of(sh_params) == device_of(view_matrix));
+    assert(device_of(sh_params) == device_of(proj_matrix));
+    assert(device_of(sh_params) == device_of(cam_position));
+    assert(device_of(sh_params) == device_of(grad_framebuffer));
+    assert(weights.is_contiguous());
+    assert(centroids.is_contiguous());
+    assert(cov_scales.is_contiguous());
+    assert(cov_rotations.is_contiguous());
+    assert(view_matrix.is_contiguous());
+    assert(proj_matrix.is_contiguous());
+    assert(cam_position.is_contiguous());
+    assert(grad_framebuffer.is_contiguous());
+    if (sh_params.is_cuda()) {
+        assert(device_of(sh_params).has_value());
+        device_guard.set_device(device_of(sh_params).value());
+    }
+    const auto cuda_floa_type = torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA);
+    const auto n_gaussians = weights.size(0);
 
-//     convolution_fitting::Config config = {};
-//     config.n_components_fitting = unsigned(n_components_fitting);
-//     const auto retval = convolution_fitting::backward_impl(grad, data, kernels, convolution_fitting::ForwardOutput{fitting, cached_pos_covs, nodeobjs, fitting_subtrees}, config);
-// #ifdef GPE_PROFILER_BUILD
-//     cudaDeviceSynchronize();
-// #endif
-//     return retval;
-// }
+    dgmr::vol_marcher::ForwardData data;
+    data.gm_centroids = whack::make_tensor_view<const glm::vec3>(centroids, n_gaussians);
+    // python may send only the DC term.
+    const auto sh_params_extended = torch::cat({ sh_params, torch::ones({ n_gaussians, 16 - sh_params.size(1), 3 }, cuda_floa_type) }, 1);
+    data.gm_sh_params = whack::make_tensor_view<const dgmr::SHs<3>>(sh_params_extended, n_gaussians);
+    data.gm_weights = whack::make_tensor_view<const float>(weights, n_gaussians);
+    data.gm_cov_scales = whack::make_tensor_view<const glm::vec3>(cov_scales, n_gaussians);
+    data.gm_cov_rotations = whack::make_tensor_view<const glm::quat>(cov_rotations, n_gaussians);
+    data.framebuffer = whack::make_tensor_view<float>(framebuffer, 3, render_height, render_width);
+    data.view_matrix = to_mat4(view_matrix);
+    data.proj_matrix = to_mat4(proj_matrix);
+    data.cam_poition = to_vec3(cam_position);
+    data.background = to_vec3(background);
+    data.sh_degree = sh_degree;
+    data.tan_fovx = tan_fovx;
+    data.tan_fovy = tan_fovy;
+
+    dgmr::vol_marcher::ForwardCache cache;
+
+    convolution_fitting::Config config = {};
+    config.n_components_fitting = unsigned(n_components_fitting);
+    const auto retval = convolution_fitting::backward_impl(grad, data, kernels, convolution_fitting::ForwardOutput { fitting, cached_pos_covs, nodeobjs, fitting_subtrees }, config);
+
+    return retval;
+}
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("forward", &vol_marcher_forward, "vol_marcher_forward");

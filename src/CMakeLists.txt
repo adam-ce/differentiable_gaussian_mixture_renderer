@@ -37,6 +37,7 @@ add_library(differentiable_gaussian_mixture_renderer
 	dgmr/splat_forward.h	dgmr/splat_forward.cu
     dgmr/vol_raster_forward.h	dgmr/vol_raster_forward.cu
     dgmr/vol_marcher_forward.h      dgmr/vol_marcher_forward.cu
+    dgmr/vol_marcher_backward.h      dgmr/vol_marcher_backward.cu
 	dgmr/constants.h
     dgmr/math.h    dgmr/grad/math.h
     dgmr/piecewise_linear.h
@@ -45,6 +46,7 @@ add_library(differentiable_gaussian_mixture_renderer
     dgmr/marching_steps.h
     dgmr/sibr_interfaces.h dgmr/sibr_interfaces.cpp
     dgmr/vol_marcher.h
+    dgmr/util.h
 )
 target_compile_definitions(differentiable_gaussian_mixture_renderer PUBLIC GLM_FORCE_LEFT_HANDED GLM_FORCE_QUAT_DATA_WXYZ)
 target_link_libraries(differentiable_gaussian_mixture_renderer PUBLIC stroke whack PRIVATE torch)
