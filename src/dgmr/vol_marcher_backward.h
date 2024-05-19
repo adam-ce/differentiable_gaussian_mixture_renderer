@@ -26,13 +26,13 @@
 
 namespace dgmr::vol_marcher {
 struct Gradients {
-    whack::TensorView<const glm::vec3, 1> gm_centroids;
-    whack::TensorView<const SHs<3>, 1> gm_sh_params;
-    whack::TensorView<const float, 1> gm_weights;
-    whack::TensorView<const glm::vec3, 1> gm_cov_scales;
-    whack::TensorView<const glm::quat, 1> gm_cov_rotations;
+    torch::Tensor gm_centroids;
+    torch::Tensor gm_sh_params;
+    torch::Tensor gm_weights;
+    torch::Tensor gm_cov_scales;
+    torch::Tensor gm_cov_rotations;
 };
 
-Gradients backward(const ForwardData& forward_data, const ForwardCache& forward_cache);
+Gradients backward(const ForwardData& forward_data, const ForwardCache& forward_cache, const torch::Tensor& grad);
 
 } // namespace dgmr::vol_marcher

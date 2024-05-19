@@ -8,7 +8,8 @@ source_dir = os.path.dirname(__file__)
 
 source_files = [
     source_dir + "/vol_marcher.cu",
-    source_dir + "/../src/dgmr/vol_marcher_forward.cu"
+    source_dir + "/../src/dgmr/vol_marcher_forward.cu",
+    source_dir + "/../src/dgmr/vol_marcher_backward.cu"
 ]
 cpp_binding = load('vol_marcher', source_files,
                    extra_include_paths=extra_include_paths,

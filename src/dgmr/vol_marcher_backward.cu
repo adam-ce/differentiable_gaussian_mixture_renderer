@@ -44,7 +44,7 @@ STROKE_DEVICES glm::vec3 clamp_cov_scales(const glm::vec3& cov_scales)
 }
 } // namespace
 
-dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const dgmr::vol_marcher::ForwardData& data, const dgmr::vol_marcher::ForwardCache& cache)
+dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const dgmr::vol_marcher::ForwardData& data, const dgmr::vol_marcher::ForwardCache& cache, const torch::Tensor& grad)
 {
     const auto fb_width = data.framebuffer.size<2>();
     const auto fb_height = data.framebuffer.size<1>();
@@ -60,15 +60,27 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const dgmr::vol_marcher
     const dim3 render_grid_dim = whack::grid_dim_from_total_size({ data.framebuffer.size<2>(), data.framebuffer.size<1>() }, render_block_dim);
 
     // geometry buffers, filled by the forward preprocess pass
-    auto g_rects = whack::make_tensor_view<const glm::uvec2>(cache.rects_data, n_gaussians);
-    auto g_rgb = whack::make_tensor_view<const glm::vec3>(cache.rgb_data, n_gaussians);
-    auto g_rgb_sh_clamped = whack::make_tensor_view<const glm::vec<3, bool>>(cache.rgb_sh_clamped_data, n_gaussians);
-    auto g_depths = whack::make_tensor_view<const float>(cache.depths_data, n_gaussians);
-    auto g_points_xy_image = whack::make_tensor_view<const glm::vec2>(cache.points_xy_image_data, n_gaussians);
-    auto g_inverse_filtered_cov3d = whack::make_tensor_view<const stroke::Cov3_f>(cache.inverse_filtered_cov3d_data, n_gaussians);
-    auto g_filtered_masses = whack::make_tensor_view<const float>(cache.filtered_masses_data, n_gaussians);
-    auto g_tiles_touched = whack::make_tensor_view<const uint32_t>(cache.tiles_touched_data, n_gaussians);
-    auto g_point_offsets = whack::make_tensor_view<const uint32_t>(cache.point_offsets_data, n_gaussians);
+    auto g_rects = whack::make_tensor_view<const glm::uvec2>(cache.rects, n_gaussians);
+    auto g_rgb = whack::make_tensor_view<const glm::vec3>(cache.rgb, n_gaussians);
+    auto g_rgb_sh_clamped = whack::make_tensor_view<const glm::vec<3, bool>>(cache.rgb_sh_clamped, n_gaussians);
+    auto g_depths = whack::make_tensor_view<const float>(cache.depths, n_gaussians);
+    auto g_points_xy_image = whack::make_tensor_view<const glm::vec2>(cache.points_xy_image, n_gaussians);
+    auto g_inverse_filtered_cov3d = whack::make_tensor_view<const stroke::Cov3_f>(cache.inverse_filtered_cov3d, n_gaussians);
+    auto g_filtered_masses = whack::make_tensor_view<const float>(cache.filtered_masses, n_gaussians);
+    auto g_tiles_touched = whack::make_tensor_view<const uint32_t>(cache.tiles_touched, n_gaussians);
+    auto g_point_offsets = whack::make_tensor_view<const uint32_t>(cache.point_offsets, n_gaussians);
+
+    Gradients grads;
+    grads.gm_sh_params = torch::empty({ n_gaussians, 16 * 3 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
+    grads.gm_weights = torch::empty({ n_gaussians, 1 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
+    grads.gm_centroids = torch::empty({ n_gaussians, 3 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
+    grads.gm_cov_scales = torch::empty({ n_gaussians, 3 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
+    grads.gm_cov_rotations = torch::empty({ n_gaussians, 4 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
+    whack::TensorView<const SHs<3>, 1> grad_gm_sh_params_view = whack::make_tensor_view<dgmr::SHs<3>>(grads.gm_sh_params, n_gaussians);
+    whack::TensorView<const float, 1> grad_gm_weights_view = whack::make_tensor_view<float>(grads.gm_weights, n_gaussians);
+    whack::TensorView<const glm::vec3, 1> grad_gm_centroids_view = whack::make_tensor_view<glm::vec3>(grads.gm_centroids, n_gaussians);
+    whack::TensorView<const glm::vec3, 1> grad_gm_cov_scales_view = whack::make_tensor_view<glm::vec3>(grads.gm_cov_scales, n_gaussians);
+    whack::TensorView<const glm::quat, 1> grad_gm_cov_rotations_view = whack::make_tensor_view<glm::quat>(grads.gm_cov_rotations, n_gaussians);
 
     // // render backward
     // // Let each tile blend its range of Gaussians independently in parallel
@@ -376,5 +388,5 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const dgmr::vol_marcher
     //             g_filtered_masses(idx) = mass;
     //         });
     // }
-    return {};
+    return grads;
 }

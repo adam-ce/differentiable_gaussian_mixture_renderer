@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "../src/dgmr/vol_marcher_forward.h"
+#include "../src/dgmr/vol_marcher_backward.h"
 #include <whack/torch_interop.h>
 
 namespace {
@@ -94,15 +95,16 @@ std::vector<torch::Tensor> vol_marcher_forward(
 
     const auto cache = dgmr::vol_marcher::forward(data);
     return { framebuffer,
-        cache.depths_data,
-        cache.filtered_masses_data,
-        cache.inverse_filtered_cov3d_data,
-        cache.point_offsets_data,
-        cache.points_xy_image_data,
-        cache.rects_data,
-        cache.rgb_data,
-        cache.rgb_sh_clamped_data,
-        cache.tiles_touched_data
+        cache.rects,
+        cache.rgb,
+        cache.rgb_sh_clamped,
+        cache.depths,
+        cache.points_xy_image,
+        cache.inverse_filtered_cov3d,
+        cache.filtered_masses,
+        cache.tiles_touched,
+        cache.point_offsets,
+        cache.remaining_transparency
         };
 }
 
@@ -121,7 +123,8 @@ std::vector<torch::Tensor> vol_marcher_backward(
     float tan_fovx,
     float tan_fovy,
     unsigned sh_degree,
-    const torch::Tensor& grad_framebuffer)
+    const torch::Tensor& grad_framebuffer,
+    const std::vector<torch::Tensor>& cache_vector)
 {
     at::cuda::OptionalCUDAGuard device_guard;
     assert(device_of(sh_params) == device_of(weights));
@@ -140,6 +143,9 @@ std::vector<torch::Tensor> vol_marcher_backward(
     assert(proj_matrix.is_contiguous());
     assert(cam_position.is_contiguous());
     assert(grad_framebuffer.is_contiguous());
+    for (const auto& t : cache_vector) {
+        assert(t.is_contiguous());
+    }
     if (sh_params.is_cuda()) {
         assert(device_of(sh_params).has_value());
         device_guard.set_device(device_of(sh_params).value());
@@ -148,14 +154,13 @@ std::vector<torch::Tensor> vol_marcher_backward(
     const auto n_gaussians = weights.size(0);
 
     dgmr::vol_marcher::ForwardData data;
-    data.gm_centroids = whack::make_tensor_view<const glm::vec3>(centroids, n_gaussians);
     // python may send only the DC term.
     const auto sh_params_extended = torch::cat({ sh_params, torch::ones({ n_gaussians, 16 - sh_params.size(1), 3 }, cuda_floa_type) }, 1);
     data.gm_sh_params = whack::make_tensor_view<const dgmr::SHs<3>>(sh_params_extended, n_gaussians);
     data.gm_weights = whack::make_tensor_view<const float>(weights, n_gaussians);
+    data.gm_centroids = whack::make_tensor_view<const glm::vec3>(centroids, n_gaussians);
     data.gm_cov_scales = whack::make_tensor_view<const glm::vec3>(cov_scales, n_gaussians);
     data.gm_cov_rotations = whack::make_tensor_view<const glm::quat>(cov_rotations, n_gaussians);
-    data.framebuffer = whack::make_tensor_view<float>(framebuffer, 3, render_height, render_width);
     data.view_matrix = to_mat4(view_matrix);
     data.proj_matrix = to_mat4(proj_matrix);
     data.cam_poition = to_vec3(cam_position);
@@ -165,15 +170,23 @@ std::vector<torch::Tensor> vol_marcher_backward(
     data.tan_fovy = tan_fovy;
 
     dgmr::vol_marcher::ForwardCache cache;
+    cache.rects = cache_vector.at(1);
+    cache.rgb = cache_vector.at(2);
+    cache.rgb_sh_clamped = cache_vector.at(3);
+    cache.depths = cache_vector.at(4);
+    cache.points_xy_image = cache_vector.at(5);
+    cache.inverse_filtered_cov3d = cache_vector.at(6);
+    cache.filtered_masses = cache_vector.at(7);
+    cache.tiles_touched = cache_vector.at(8);
+    cache.point_offsets = cache_vector.at(9);
+    cache.remaining_transparency = cache_vector.at(10);
 
-    convolution_fitting::Config config = {};
-    config.n_components_fitting = unsigned(n_components_fitting);
-    const auto retval = convolution_fitting::backward_impl(grad, data, kernels, convolution_fitting::ForwardOutput { fitting, cached_pos_covs, nodeobjs, fitting_subtrees }, config);
+    const dgmr::vol_marcher::Gradients retval = dgmr::vol_marcher::backward(data, cache, grad_framebuffer);
 
-    return retval;
+    return { retval.gm_sh_params, retval.gm_weights, retval.gm_centroids, retval.gm_cov_scales, retval.gm_cov_rotations };
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("forward", &vol_marcher_forward, "vol_marcher_forward");
-    // m.def("backward", &convolution_fitting_backward, "convolution_fitting_backward");
+    m.def("backward", &vol_marcher_backward, "vol_marcher_backward");
 }

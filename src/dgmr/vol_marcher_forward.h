@@ -26,15 +26,16 @@
 namespace dgmr::vol_marcher {
 
 struct ForwardCache {
-    torch::Tensor rects_data;
-    torch::Tensor rgb_data;
-    torch::Tensor rgb_sh_clamped_data;
-    torch::Tensor depths_data;
-    torch::Tensor points_xy_image_data;
-    torch::Tensor inverse_filtered_cov3d_data;
-    torch::Tensor filtered_masses_data;
-    torch::Tensor tiles_touched_data;
-    torch::Tensor point_offsets_data;
+    torch::Tensor rects;
+    torch::Tensor rgb;
+    torch::Tensor rgb_sh_clamped;
+    torch::Tensor depths;
+    torch::Tensor points_xy_image;
+    torch::Tensor inverse_filtered_cov3d;
+    torch::Tensor filtered_masses;
+    torch::Tensor tiles_touched;
+    torch::Tensor point_offsets;
+    torch::Tensor remaining_transparency;
 };
 
 ForwardCache forward(vol_marcher::ForwardData& forward_data);

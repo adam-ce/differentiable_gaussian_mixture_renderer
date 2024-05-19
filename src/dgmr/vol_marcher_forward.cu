@@ -54,32 +54,32 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
 
     // geometry buffers, filled by the preprocess pass
     dgmr::vol_marcher::ForwardCache cache;
-    cache.rects_data = torch::empty({ n_gaussians, 2 }, torch::TensorOptions().dtype(torch::kInt).device(torch::kCUDA));
-    auto g_rects = whack::make_tensor_view<glm::uvec2>(cache.rects_data, n_gaussians);
+    cache.rects = torch::empty({ n_gaussians, 2 }, torch::TensorOptions().dtype(torch::kInt).device(torch::kCUDA));
+    auto g_rects = whack::make_tensor_view<glm::uvec2>(cache.rects, n_gaussians);
 
-    cache.rgb_data = torch::empty({ n_gaussians, 3 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
-    auto g_rgb = whack::make_tensor_view<glm::vec3>(cache.rgb_data, n_gaussians);
+    cache.rgb = torch::empty({ n_gaussians, 3 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
+    auto g_rgb = whack::make_tensor_view<glm::vec3>(cache.rgb, n_gaussians);
 
-    cache.rgb_sh_clamped_data = torch::empty({ n_gaussians, 3 }, torch::TensorOptions().dtype(torch::kBool).device(torch::kCUDA));
-    auto g_rgb_sh_clamped = whack::make_tensor_view<glm::vec<3, bool>>(cache.rgb_sh_clamped_data, n_gaussians);
+    cache.rgb_sh_clamped = torch::empty({ n_gaussians, 3 }, torch::TensorOptions().dtype(torch::kBool).device(torch::kCUDA));
+    auto g_rgb_sh_clamped = whack::make_tensor_view<glm::vec<3, bool>>(cache.rgb_sh_clamped, n_gaussians);
 
-    cache.depths_data = torch::empty({ n_gaussians }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
-    auto g_depths = whack::make_tensor_view<float>(cache.depths_data, n_gaussians);
+    cache.depths = torch::empty({ n_gaussians }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
+    auto g_depths = whack::make_tensor_view<float>(cache.depths, n_gaussians);
 
-    cache.points_xy_image_data = torch::empty({ n_gaussians, 2 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
-    auto g_points_xy_image = whack::make_tensor_view<glm::vec2>(cache.points_xy_image_data, n_gaussians);
+    cache.points_xy_image = torch::empty({ n_gaussians, 2 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
+    auto g_points_xy_image = whack::make_tensor_view<glm::vec2>(cache.points_xy_image, n_gaussians);
 
-    cache.inverse_filtered_cov3d_data = torch::empty({ n_gaussians, 6 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
-    auto g_inverse_filtered_cov3d = whack::make_tensor_view<stroke::Cov3_f>(cache.inverse_filtered_cov3d_data, n_gaussians);
+    cache.inverse_filtered_cov3d = torch::empty({ n_gaussians, 6 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
+    auto g_inverse_filtered_cov3d = whack::make_tensor_view<stroke::Cov3_f>(cache.inverse_filtered_cov3d, n_gaussians);
 
-    cache.filtered_masses_data = torch::empty({ n_gaussians }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
-    auto g_filtered_masses = whack::make_tensor_view<float>(cache.filtered_masses_data, n_gaussians);
+    cache.filtered_masses = torch::empty({ n_gaussians }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
+    auto g_filtered_masses = whack::make_tensor_view<float>(cache.filtered_masses, n_gaussians);
 
-    cache.tiles_touched_data = torch::empty({ n_gaussians }, torch::TensorOptions().dtype(torch::kInt).device(torch::kCUDA));
-    auto g_tiles_touched = whack::make_tensor_view<uint32_t>(cache.tiles_touched_data, n_gaussians);
+    cache.tiles_touched = torch::empty({ n_gaussians }, torch::TensorOptions().dtype(torch::kInt).device(torch::kCUDA));
+    auto g_tiles_touched = whack::make_tensor_view<uint32_t>(cache.tiles_touched, n_gaussians);
 
-    cache.point_offsets_data = torch::empty({ n_gaussians }, torch::TensorOptions().dtype(torch::kInt).device(torch::kCUDA));
-    auto g_point_offsets = whack::make_tensor_view<uint32_t>(cache.point_offsets_data, n_gaussians);
+    cache.point_offsets = torch::empty({ n_gaussians }, torch::TensorOptions().dtype(torch::kInt).device(torch::kCUDA));
+    auto g_point_offsets = whack::make_tensor_view<uint32_t>(cache.point_offsets, n_gaussians);
 
     // preprocess, run per Gaussian
     {
@@ -149,8 +149,8 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
     // E.g., [2, 3, 0, 2, 1] -> [2, 5, 5, 7, 8]
     {
         size_t temp_storage_bytes = 0;
-        auto tiles_touched_ptr = whack::raw_pointer<uint32_t>(cache.tiles_touched_data);
-        auto point_offsets_ptr = whack::raw_pointer<uint32_t>(cache.point_offsets_data);
+        auto tiles_touched_ptr = whack::raw_pointer<uint32_t>(cache.tiles_touched);
+        auto point_offsets_ptr = whack::raw_pointer<uint32_t>(cache.point_offsets);
 
         cub::DeviceScan::InclusiveSum(nullptr, temp_storage_bytes, tiles_touched_ptr, point_offsets_ptr, n_gaussians);
         auto temp_storage = torch::empty(temp_storage_bytes, torch::TensorOptions().dtype(torch::kChar).device(torch::kCUDA));
@@ -160,7 +160,7 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
         CHECK_CUDA(data.debug);
     }
 
-    const auto n_render_gaussians = unsigned(cache.point_offsets_data[n_gaussians - 1].item<int>());
+    const auto n_render_gaussians = unsigned(cache.point_offsets[n_gaussians - 1].item<int>());
     if (n_render_gaussians == 0)
         return {};
 
