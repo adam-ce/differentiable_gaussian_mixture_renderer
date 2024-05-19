@@ -341,10 +341,6 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
                             const auto gaussian1d = gaussian::intersect_with_ray_inv_C(collected_centroid[j], collected_inv_cov3[j], ray);
                             const auto sd = stroke::sqrt(gaussian1d.C);
 
-                            // if (sample_sections.size() == config::n_large_steps && g_depths(collected_id[j]) > sample_sections[config::n_large_steps - 1]) {
-                            //     done_1 = true;
-                            //     break;
-                            // }
                             if (sample_sections.end() < g_depths(collected_id[j])) {
                                 done_1 = true;
                                 break;
@@ -366,7 +362,7 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
                         }
                     }
 
-                    // iterate again, and compute linear interpolations
+                    // iterate again, compute sampling and blend
                     const auto bin_borders = marching_steps::sample<config::n_small_steps>(sample_sections);
                     whack::Array<glm::vec4, config::n_small_steps> bin_eval = {};
 
@@ -422,16 +418,11 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
 
                             auto cdf_start = gaussian::cdf_inv_SD(centroid, inv_sd, current_large_step_start);
                             for (auto k = 0u; k < bin_borders.size() - 1; ++k) {
-                                // const auto left = bin_borders[k];
                                 const auto right = bin_borders[k + 1];
-                                // const auto position = (left + right) / 2;
-                                // const auto delta_t = (right - left);
                                 const auto cdf_end = gaussian::cdf_inv_SD(centroid, inv_sd, right);
                                 const auto mass = stroke::max(0.f, (cdf_end - cdf_start) * mass_on_ray);
                                 cdf_start = cdf_end;
 
-                                // const auto eval = weight * gaussian::eval_exponential(centroid, variance, position);
-                                // const auto mass = stroke::max(0.f, eval * delta_t);
                                 if (mass < 0.00001f)
                                     continue;
 
@@ -447,10 +438,7 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
                         for (auto k = 0u; k < bin_eval.size(); ++k) {
                             const auto eval_t = bin_eval[k];
                             current_colour += glm::vec<3, float>(eval_t) * current_transparency;
-                            // current_transparency *= stroke::max(float(0), 1 - eval_t.w);
                             current_transparency *= stroke::exp(-eval_t.w);
-                            // current_mass += eval_t.w * delta_t;
-                            // current_transparency = stroke::exp(-current_mass);
                         }
                         break;
                     }
@@ -489,10 +477,7 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
                     const int num_done = __syncthreads_count(done);
                     if (num_done == render_block_size)
                         break;
-                    // large_stepping_ongoing = false || (current_large_steps.size() == config::n_large_steps && current_transparency > 0.001f);
                     current_large_step_start = bin_borders[bin_borders.size() - 1];
-                    // if (!done)
-                    // current_large_step_start = sample_sections[sample_sections.size() - 1].end;
                 }
 
                 if (!inside)

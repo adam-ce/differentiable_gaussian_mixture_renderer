@@ -46,95 +46,31 @@ STROKE_DEVICES glm::vec3 clamp_cov_scales(const glm::vec3& cov_scales)
 
 dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const dgmr::vol_marcher::ForwardData& data, const dgmr::vol_marcher::ForwardCache& cache)
 {
-    // const auto fb_width = data.framebuffer.size<2>();
-    // const auto fb_height = data.framebuffer.size<1>();
-    // const auto n_gaussians = data.gm_weights.size<0>();
-    // const float focal_y = fb_height / (2.0f * data.tan_fovy);
-    // const float focal_x = fb_width / (2.0f * data.tan_fovx);
-    // const auto aa_distance_multiplier = (config::filter_kernel_SD * data.tan_fovx * 2) / fb_width;
+    const auto fb_width = data.framebuffer.size<2>();
+    const auto fb_height = data.framebuffer.size<1>();
+    const auto n_gaussians = data.gm_weights.size<0>();
+    const float focal_y = fb_height / (2.0f * data.tan_fovy);
+    const float focal_x = fb_width / (2.0f * data.tan_fovx);
+    const auto aa_distance_multiplier = (config::filter_kernel_SD * data.tan_fovx * 2) / fb_width;
 
-    // constexpr dim3 render_block_dim = { render_block_width, render_block_height };
-    // constexpr auto render_block_size = render_block_width * render_block_height;
-    // constexpr auto render_n_warps = render_block_size / 32;
-    // static_assert(render_n_warps * 32 == render_block_size);
-    // const dim3 render_grid_dim = whack::grid_dim_from_total_size({ data.framebuffer.size<2>(), data.framebuffer.size<1>() }, render_block_dim);
+    constexpr dim3 render_block_dim = { render_block_width, render_block_height };
+    constexpr auto render_block_size = render_block_width * render_block_height;
+    constexpr auto render_n_warps = render_block_size / 32;
+    static_assert(render_n_warps * 32 == render_block_size);
+    const dim3 render_grid_dim = whack::grid_dim_from_total_size({ data.framebuffer.size<2>(), data.framebuffer.size<1>() }, render_block_dim);
 
-    // // geometry buffers, filled by the preprocess pass
-    // auto g_rects = whack::make_tensor_view<glm::uvec2>(cache.rects_data, n_gaussians);
-    // auto g_rgb = whack::make_tensor_view<glm::vec3>(cache.rgb_data, n_gaussians);
-    // auto g_rgb_sh_clamped = whack::make_tensor_view<glm::vec<3, bool>>(cache.rgb_sh_clamped_data, n_gaussians);
-    // auto g_depths = whack::make_tensor_view<float>(cache.depths_data, n_gaussians);
-    // auto g_points_xy_image = whack::make_tensor_view<glm::vec2>(cache.points_xy_image_data, n_gaussians);
-    // auto g_inverse_filtered_cov3d = whack::make_tensor_view<stroke::Cov3_f>(cache.inverse_filtered_cov3d_data, n_gaussians);
-    // auto g_filtered_masses = whack::make_tensor_view<float>(cache.filtered_masses_data, n_gaussians);
-    // auto g_tiles_touched = whack::make_tensor_view<uint32_t>(cache.tiles_touched_data, n_gaussians);
-    // auto g_point_offsets = whack::make_tensor_view<uint32_t>(cache.point_offsets_data, n_gaussians);
+    // geometry buffers, filled by the forward preprocess pass
+    auto g_rects = whack::make_tensor_view<const glm::uvec2>(cache.rects_data, n_gaussians);
+    auto g_rgb = whack::make_tensor_view<const glm::vec3>(cache.rgb_data, n_gaussians);
+    auto g_rgb_sh_clamped = whack::make_tensor_view<const glm::vec<3, bool>>(cache.rgb_sh_clamped_data, n_gaussians);
+    auto g_depths = whack::make_tensor_view<const float>(cache.depths_data, n_gaussians);
+    auto g_points_xy_image = whack::make_tensor_view<const glm::vec2>(cache.points_xy_image_data, n_gaussians);
+    auto g_inverse_filtered_cov3d = whack::make_tensor_view<const stroke::Cov3_f>(cache.inverse_filtered_cov3d_data, n_gaussians);
+    auto g_filtered_masses = whack::make_tensor_view<const float>(cache.filtered_masses_data, n_gaussians);
+    auto g_tiles_touched = whack::make_tensor_view<const uint32_t>(cache.tiles_touched_data, n_gaussians);
+    auto g_point_offsets = whack::make_tensor_view<const uint32_t>(cache.point_offsets_data, n_gaussians);
 
-    // // preprocess, run per Gaussian
-    // {
-    //     math::Camera<float> camera {
-    //         data.view_matrix, data.proj_matrix, focal_x, focal_y, data.tan_fovx, data.tan_fovy, fb_width, fb_height
-    //     };
-
-    //     const dim3 block_dim = { 128 };
-    //     const dim3 grid_dim = whack::grid_dim_from_total_size({ data.gm_weights.size<0>() }, block_dim);
-    //     whack::start_parallel(
-    //         whack::Location::Device, grid_dim, block_dim, WHACK_KERNEL(=) {
-    //             WHACK_UNUSED(whack_gridDim);
-    //             const auto idx = whack_blockIdx.x * whack_blockDim.x + whack_threadIdx.x;
-    //             if (idx >= n_gaussians)
-    //                 return;
-
-    //             // Initialize touched tiles to 0. If this isn't changed,
-    //             // this Gaussian will not be processed further.
-    //             g_tiles_touched(idx) = 0;
-
-    //             const auto centroid = data.gm_centroids(idx);
-    //             if ((data.view_matrix * glm::vec4(centroid, 1.f)).z < 0.2) // adam doesn't understand, why projection matrix > 0 isn't enough.
-    //                 return;
-
-    //             const auto weights = data.gm_weights(idx);
-    //             const auto scales = data.gm_cov_scales(idx) * data.cov_scale_multiplier;
-    //             const auto rotations = data.gm_cov_rotations(idx);
-
-    //             const auto screen_space_gaussian = math::splat<vol_marcher::config::gaussian_mixture_formulation>(weights, centroid, scales, rotations, camera, 0.3f);
-
-    //             const auto cov3d = math::compute_cov(clamp_cov_scales(data.gm_cov_scales(idx)), data.gm_cov_rotations(idx));
-
-    //             // low pass filter to combat aliasing
-    //             const auto filter_kernel_size = glm::distance(centroid, data.cam_poition) * aa_distance_multiplier;
-    //             const auto filtered_cov_3d = cov3d + stroke::Cov3_f(filter_kernel_size * filter_kernel_size);
-    //             const auto mass = math::weight_to_mass<vol_marcher::config::gaussian_mixture_formulation>(weights, scales + glm::vec3(filter_kernel_size * filter_kernel_size));
-    //             if (mass <= 0)
-    //                 return; // clipped
-
-    //             // using the more aggressive computation for calculating overlapping tiles:
-    //             {
-    //                 const glm::uvec2 my_rect = { (int)ceil(3.f * sqrt(screen_space_gaussian.cov[0])), (int)ceil(3.f * sqrt(screen_space_gaussian.cov[2])) };
-    //                 g_rects(idx) = my_rect;
-    //                 glm::uvec2 rect_min, rect_max;
-    //                 getRect(screen_space_gaussian.centroid, my_rect, &rect_min, &rect_max, render_grid_dim);
-
-    //                 const auto tiles_touched = (rect_max.x - rect_min.x) * (rect_max.y - rect_min.y);
-    //                 if (tiles_touched == 0)
-    //                     return; // clipped
-    //                 g_tiles_touched(idx) = tiles_touched;
-    //                 g_points_xy_image(idx) = screen_space_gaussian.centroid;
-    //             }
-
-    //             const auto inverse_filtered_cov = stroke::inverse(filtered_cov_3d);
-
-    //             // g_depths(idx) = glm::length(data.cam_poition - centroid);
-    //             g_depths(idx) = (glm::length(data.cam_poition - centroid) - math::max(scales) * config::gaussian_relevance_sigma / 2);
-
-    //             // convert spherical harmonics coefficients to RGB color.
-    //             g_rgb(idx) = computeColorFromSH(data.sh_degree, centroid, data.cam_poition, data.gm_sh_params(idx), &g_rgb_sh_clamped(idx));
-    //             g_inverse_filtered_cov3d(idx) = inverse_filtered_cov;
-    //             g_filtered_masses(idx) = mass;
-    //         });
-    // }
-
-    // // render
+    // // render backward
     // // Let each tile blend its range of Gaussians independently in parallel
     // {
     //     // Main rasterization method. Collaboratively works on one tile per
@@ -158,7 +94,7 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const dgmr::vol_marcher
     //             const auto ray = stroke::Ray<3, float> { data.cam_poition, glm::normalize(glm::vec3(view_at_world) - data.cam_poition) };
     //             const unsigned thread_rank = whack_blockDim.x * whack_threadIdx.y + whack_threadIdx.x;
 
-    //             // Check if this thread is associated with a valid pixel or outside.
+    //                    // Check if this thread is associated with a valid pixel or outside.
     //             bool inside = pix.x < fb_width && pix.y < fb_height;
     //             // Done threads can help with fetching, but don't rasterize
     //             bool done = !inside;
@@ -167,7 +103,7 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const dgmr::vol_marcher
     //             const auto n_rounds = ((render_g_range.y - render_g_range.x + render_block_size - 1) / render_block_size);
     //             auto n_toDo = render_g_range.y - render_g_range.x;
 
-    //             // Allocate storage for batches of collectively fetched data.
+    //                    // Allocate storage for batches of collectively fetched data.
     //             __shared__ int collected_id[render_block_size];
     //             __shared__ float collected_3d_masses[render_block_size];
     //             __shared__ glm::vec3 collected_centroid[render_block_size];
@@ -193,7 +129,7 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const dgmr::vol_marcher
     //                     if (num_done == render_block_size)
     //                         break;
 
-    //                     // Collectively fetch per-Gaussian data from global to shared
+    //                            // Collectively fetch per-Gaussian data from global to shared
     //                     const int progress = i * render_block_size + thread_rank;
     //                     if (render_g_range.x + progress < render_g_range.y) {
     //                         unsigned coll_id = b_point_list(render_g_range.x + progress);
@@ -208,15 +144,15 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const dgmr::vol_marcher
     //                     if (done || done_1)
     //                         continue;
 
-    //                     // Iterate over current batch
+    //                            // Iterate over current batch
     //                     for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
     //                         const auto gaussian1d = gaussian::intersect_with_ray_inv_C(collected_centroid[j], collected_inv_cov3[j], ray);
     //                         const auto sd = stroke::sqrt(gaussian1d.C);
 
-    //                         // if (sample_sections.size() == config::n_large_steps && g_depths(collected_id[j]) > sample_sections[config::n_large_steps - 1]) {
-    //                         //     done_1 = true;
-    //                         //     break;
-    //                         // }
+    //                                // if (sample_sections.size() == config::n_large_steps && g_depths(collected_id[j]) > sample_sections[config::n_large_steps - 1]) {
+    //                                //     done_1 = true;
+    //                                //     break;
+    //                                // }
     //                         if (sample_sections.end() < g_depths(collected_id[j])) {
     //                             done_1 = true;
     //                             break;
@@ -238,14 +174,14 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const dgmr::vol_marcher
     //                     }
     //                 }
 
-    //                 // iterate again, and compute linear interpolations
+    //                        // iterate again, and compute linear interpolations
     //                 const auto bin_borders = marching_steps::sample<config::n_small_steps>(sample_sections);
     //                 whack::Array<glm::vec4, config::n_small_steps> bin_eval = {};
 
     //                 float dbg_mass_in_bins_closeed = 0;
     //                 float dbg_mass_in_bins_numerik_1 = 0;
 
-    //                 // Iterate over batches until all done or range is complete: rasterise into bins
+    //                        // Iterate over batches until all done or range is complete: rasterise into bins
     //                 n_toDo = render_g_range.y - render_g_range.x;
     //                 for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {
     //                     // End if entire block votes that it is done rasterizing
@@ -253,7 +189,7 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const dgmr::vol_marcher
     //                     if (num_done == render_block_size)
     //                         break;
 
-    //                     // Collectively fetch per-Gaussian data from global to shared
+    //                            // Collectively fetch per-Gaussian data from global to shared
     //                     const int progress = i * render_block_size + thread_rank;
     //                     if (render_g_range.x + progress < render_g_range.y) {
     //                         unsigned coll_id = b_point_list(render_g_range.x + progress);
@@ -268,7 +204,7 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const dgmr::vol_marcher
     //                     if (done)
     //                         continue;
 
-    //                     // Iterate over current batch
+    //                            // Iterate over current batch
     //                     for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
     //                         const auto inv_cov = collected_inv_cov3[j];
     //                         const auto gaussian1d = gaussian::intersect_with_ray_inv_C(collected_centroid[j], inv_cov, ray);
@@ -302,8 +238,8 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const dgmr::vol_marcher
     //                             const auto mass = stroke::max(0.f, (cdf_end - cdf_start) * mass_on_ray);
     //                             cdf_start = cdf_end;
 
-    //                             // const auto eval = weight * gaussian::eval_exponential(centroid, variance, position);
-    //                             // const auto mass = stroke::max(0.f, eval * delta_t);
+    //                                    // const auto eval = weight * gaussian::eval_exponential(centroid, variance, position);
+    //                                    // const auto mass = stroke::max(0.f, eval * delta_t);
     //                             if (mass < 0.00001f)
     //                                 continue;
 
@@ -374,6 +310,70 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const dgmr::vol_marcher
     //             data.framebuffer(0, pix.y, pix.x) = final_colour.x;
     //             data.framebuffer(1, pix.y, pix.x) = final_colour.y;
     //             data.framebuffer(2, pix.y, pix.x) = final_colour.z;
+    //         });
+    // }
+
+    // // preprocess backward, run per Gaussian
+    // {
+    //     math::Camera<float> camera {
+    //         data.view_matrix, data.proj_matrix, focal_x, focal_y, data.tan_fovx, data.tan_fovy, fb_width, fb_height
+    //     };
+
+    //     const dim3 block_dim = { 128 };
+    //     const dim3 grid_dim = whack::grid_dim_from_total_size({ data.gm_weights.size<0>() }, block_dim);
+    //     whack::start_parallel(
+    //         whack::Location::Device, grid_dim, block_dim, WHACK_KERNEL(=) {
+    //             WHACK_UNUSED(whack_gridDim);
+    //             const auto idx = whack_blockIdx.x * whack_blockDim.x + whack_threadIdx.x;
+    //             if (idx >= n_gaussians)
+    //                 return;
+
+    //             // Initialize touched tiles to 0. If this isn't changed,
+    //             // this Gaussian will not be processed further.
+    //             g_tiles_touched(idx) = 0;
+
+    //             const auto centroid = data.gm_centroids(idx);
+    //             if ((data.view_matrix * glm::vec4(centroid, 1.f)).z < 0.2) // adam doesn't understand, why projection matrix > 0 isn't enough.
+    //                 return;
+
+    //             const auto weights = data.gm_weights(idx);
+    //             const auto scales = data.gm_cov_scales(idx) * data.cov_scale_multiplier;
+    //             const auto rotations = data.gm_cov_rotations(idx);
+
+    //             const auto screen_space_gaussian = math::splat<vol_marcher::config::gaussian_mixture_formulation>(weights, centroid, scales, rotations, camera, 0.3f);
+
+    //             const auto cov3d = math::compute_cov(clamp_cov_scales(data.gm_cov_scales(idx)), data.gm_cov_rotations(idx));
+
+    //             // low pass filter to combat aliasing
+    //             const auto filter_kernel_size = glm::distance(centroid, data.cam_poition) * aa_distance_multiplier;
+    //             const auto filtered_cov_3d = cov3d + stroke::Cov3_f(filter_kernel_size * filter_kernel_size);
+    //             const auto mass = math::weight_to_mass<vol_marcher::config::gaussian_mixture_formulation>(weights, scales + glm::vec3(filter_kernel_size * filter_kernel_size));
+    //             if (mass <= 0)
+    //                 return; // clipped
+
+    //             // using the more aggressive computation for calculating overlapping tiles:
+    //             {
+    //                 const glm::uvec2 my_rect = { (int)ceil(3.f * sqrt(screen_space_gaussian.cov[0])), (int)ceil(3.f * sqrt(screen_space_gaussian.cov[2])) };
+    //                 g_rects(idx) = my_rect;
+    //                 glm::uvec2 rect_min, rect_max;
+    //                 getRect(screen_space_gaussian.centroid, my_rect, &rect_min, &rect_max, render_grid_dim);
+
+    //                 const auto tiles_touched = (rect_max.x - rect_min.x) * (rect_max.y - rect_min.y);
+    //                 if (tiles_touched == 0)
+    //                     return; // clipped
+    //                 g_tiles_touched(idx) = tiles_touched;
+    //                 g_points_xy_image(idx) = screen_space_gaussian.centroid;
+    //             }
+
+    //             const auto inverse_filtered_cov = stroke::inverse(filtered_cov_3d);
+
+    //             // g_depths(idx) = glm::length(data.cam_poition - centroid);
+    //             g_depths(idx) = (glm::length(data.cam_poition - centroid) - math::max(scales) * config::gaussian_relevance_sigma / 2);
+
+    //             // convert spherical harmonics coefficients to RGB color.
+    //             g_rgb(idx) = computeColorFromSH(data.sh_degree, centroid, data.cam_poition, data.gm_sh_params(idx), &g_rgb_sh_clamped(idx));
+    //             g_inverse_filtered_cov3d(idx) = inverse_filtered_cov;
+    //             g_filtered_masses(idx) = mass;
     //         });
     // }
     return {};
