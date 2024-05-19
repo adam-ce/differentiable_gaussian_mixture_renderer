@@ -1,8 +1,10 @@
-#include <vector>
 #include <algorithm>
-
-#include <torch/extension.h>
 #include <c10/cuda/CUDAGuard.h>
+#include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <glm/gtx/quaternion.hpp>
+#include <torch/extension.h>
+#include <vector>
 
 #include "../src/dgmr/vol_marcher_forward.h"
 #include <whack/torch_interop.h>
@@ -28,7 +30,7 @@ glm::mat4 to_mat4(const torch::Tensor& t)
     assert(t.size(0) == 4);
     assert(t.size(1) == 4);
     const auto h = t.cpu();
-    return glm::transpose(glm::mat4(to_vec4(h[0]), to_vec4(h[1]), to_vec4(h[2]), to_vec4(h[3])));
+    return glm::mat4(to_vec4(h[0]), to_vec4(h[1]), to_vec4(h[2]), to_vec4(h[3]));
 }
 } // namespace
 
@@ -56,22 +58,32 @@ std::vector<torch::Tensor> vol_marcher_forward(
     assert(device_of(sh_params) == device_of(view_matrix));
     assert(device_of(sh_params) == device_of(proj_matrix));
     assert(device_of(sh_params) == device_of(cam_position));
+    assert(weights.is_contiguous());
+    assert(centroids.is_contiguous());
+    assert(cov_scales.is_contiguous());
+    assert(cov_rotations.is_contiguous());
+    assert(view_matrix.is_contiguous());
+    assert(proj_matrix.is_contiguous());
+    assert(cam_position.is_contiguous());
     if (sh_params.is_cuda()) {
         assert(device_of(sh_params).has_value());
         device_guard.set_device(device_of(sh_params).value());
     }
 
-    torch::Tensor framebuffer = torch::empty({ 3, render_height, render_width }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
+    const auto cuda_floa_type = torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA);
+    torch::Tensor framebuffer = torch::zeros({ 3, render_height, render_width }, cuda_floa_type);
 
     const auto n_gaussians = weights.size(0);
 
     dgmr::vol_marcher::ForwardData data;
     data.gm_centroids = whack::make_tensor_view<const glm::vec3>(centroids, n_gaussians);
-    data.gm_sh_params = whack::make_tensor_view<const dgmr::SHs<3>>(sh_params, n_gaussians);
+    // python may send only the DC term.
+    const auto sh_params_extended = torch::cat({ sh_params, torch::ones({ n_gaussians, 16 - sh_params.size(1), 3 }, cuda_floa_type) }, 1);
+    data.gm_sh_params = whack::make_tensor_view<const dgmr::SHs<3>>(sh_params_extended, n_gaussians);
     data.gm_weights = whack::make_tensor_view<const float>(weights, n_gaussians);
     data.gm_cov_scales = whack::make_tensor_view<const glm::vec3>(cov_scales, n_gaussians);
     data.gm_cov_rotations = whack::make_tensor_view<const glm::quat>(cov_rotations, n_gaussians);
-    data.framebuffer = whack::make_tensor_view<float>(framebuffer, render_height, render_width, 3);
+    data.framebuffer = whack::make_tensor_view<float>(framebuffer, 3, render_height, render_width);
 
     data.view_matrix = to_mat4(view_matrix);
     data.proj_matrix = to_mat4(proj_matrix);
@@ -91,7 +103,8 @@ std::vector<torch::Tensor> vol_marcher_forward(
         cache.rects_data,
         cache.rgb_data,
         cache.rgb_sh_clamped_data,
-        cache.tiles_touched_data };
+        cache.tiles_touched_data
+        };
 }
 
 // std::pair<torch::Tensor, torch::Tensor> convolution_fitting_backward(const torch::Tensor& grad,
