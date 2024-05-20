@@ -81,6 +81,11 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
     cache.point_offsets = torch::empty({ n_gaussians }, torch::TensorOptions().dtype(torch::kInt).device(torch::kCUDA));
     auto g_point_offsets = whack::make_tensor_view<uint32_t>(cache.point_offsets, n_gaussians);
 
+    cache.remaining_transparency = torch::empty({ fb_height, fb_width }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
+    auto remaining_transparency = whack::make_tensor_view<float>(cache.remaining_transparency, fb_height, fb_width);
+
+    cache.distance_marched = torch::empty({ fb_height, fb_width }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
+    auto distance_marched = whack::make_tensor_view<float>(cache.distance_marched, fb_height, fb_width);
     // preprocess, run per Gaussian
     {
         math::Camera<float> camera {
@@ -303,12 +308,10 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
 
                 bool large_stepping_ongoing = true;
                 float current_large_step_start = 0.f;
-                // float accumulated_mass = 0;
-                static constexpr auto mass_threshold = -gcem::log(config::transmission_threshold);
 
                 glm::vec3 current_colour = glm::vec3(0);
                 float current_transparency = 1;
-                float current_mass = 0;
+                float distance_marched_tmp = 0;
 
                 while (large_stepping_ongoing) {
                     // Iterate over all gaussians and take the first config::n_large_steps larger than current_large_step_start
@@ -435,11 +438,14 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
                     switch (data.debug_render_mode) {
                     case vol_marcher::ForwardData::RenderMode::Full: {
                         // quadrature rule for bins
-                        for (auto k = 0u; k < bin_eval.size(); ++k) {
-                            const auto eval_t = bin_eval[k];
-                            current_colour += glm::vec<3, float>(eval_t) * current_transparency;
-                            current_transparency *= stroke::exp(-eval_t.w);
-                        }
+                        // for (auto k = 0u; k < bin_eval.size(); ++k) {
+                        //     const auto eval_t = bin_eval[k];
+                        //     current_colour += glm::vec<3, float>(eval_t) * current_transparency;
+                        //     current_transparency *= stroke::exp(-eval_t.w);
+                        // }
+                        cuda::std::tie(current_colour, current_transparency) = math::integrate_bins(current_colour, current_transparency, bin_eval);
+
+                        // distance_marched_tmp = stroke::max(sample_sections.end(), distance_marched_tmp);
                         break;
                     }
                     case vol_marcher::ForwardData::RenderMode::Bins: {
@@ -457,23 +463,29 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
                         break;
                     }
                     case vol_marcher::ForwardData::RenderMode::Depth: {
-                        const auto bin = stroke::min(unsigned(data.debug_render_bin), sample_sections.size() - 1);
-                        const auto distance = sample_sections[bin].end;
-                        // const auto bin = stroke::min(unsigned(data.debug_render_bin), current_large_steps.size() - 1);
-                        // const auto distance = current_large_steps.data()[bin];
-                        current_colour = glm::vec3(distance / data.max_depth);
-                        if (distance == 0)
-                            current_colour = glm::vec3(0, 1.0, 0);
-                        if (stroke::isnan(distance))
-                            current_colour = glm::vec3(1, 0, 0.5);
-                        if (distance < 0)
-                            current_colour = glm::vec3(1, 0.5, 0);
-                        current_transparency = 0;
+                        for (auto k = 0u; k < bin_eval.size(); ++k) {
+                            const auto eval_t = bin_eval[k];
+                            current_transparency *= stroke::exp(-eval_t.w);
+                        }
+                        distance_marched_tmp = stroke::max(sample_sections.end(), distance_marched_tmp);
+                        current_colour = glm::vec3(distance_marched_tmp / data.max_depth, distance_marched_tmp / data.max_depth, distance_marched_tmp / data.max_depth);
+                        // const auto bin = stroke::min(unsigned(data.debug_render_bin), sample_sections.size() - 1);
+                        // const auto distance = sample_sections[bin].end;
+                        // // const auto bin = stroke::min(unsigned(data.debug_render_bin), current_large_steps.size() - 1);
+                        // // const auto distance = current_large_steps.data()[bin];
+                        // current_colour = glm::vec3(distance / data.max_depth);
+                        // if (distance == 0)
+                        //     current_colour = glm::vec3(0, 1.0, 0);
+                        // if (stroke::isnan(distance))
+                        //     current_colour = glm::vec3(1, 0, 0.5);
+                        // if (distance < 0)
+                        //     current_colour = glm::vec3(1, 0.5, 0);
+                        // current_transparency = 0;
                         break;
                     }
                     }
 
-                    done = done || sample_sections.size() == 0 || current_transparency < 0.001f;
+                    done = done || sample_sections.size() == 0 || current_transparency < 1.f / 255.f;
                     const int num_done = __syncthreads_count(done);
                     if (num_done == render_block_size)
                         break;
@@ -487,6 +499,8 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
                 data.framebuffer(0, pix.y, pix.x) = final_colour.x;
                 data.framebuffer(1, pix.y, pix.x) = final_colour.y;
                 data.framebuffer(2, pix.y, pix.x) = final_colour.z;
+                remaining_transparency(pix.y, pix.x) = current_transparency;
+                distance_marched(pix.y, pix.x) = distance_marched_tmp;
             });
     }
     return {};

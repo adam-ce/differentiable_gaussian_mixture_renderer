@@ -104,7 +104,8 @@ std::vector<torch::Tensor> vol_marcher_forward(
         cache.filtered_masses,
         cache.tiles_touched,
         cache.point_offsets,
-        cache.remaining_transparency
+        cache.remaining_transparency,
+        cache.distance_marched
         };
 }
 
@@ -180,6 +181,7 @@ std::vector<torch::Tensor> vol_marcher_backward(
     cache.tiles_touched = cache_vector.at(8);
     cache.point_offsets = cache_vector.at(9);
     cache.remaining_transparency = cache_vector.at(10);
+    cache.distance_marched = cache_vector.at(11);
 
     const dgmr::vol_marcher::Gradients retval = dgmr::vol_marcher::backward(data, cache, grad_framebuffer);
 

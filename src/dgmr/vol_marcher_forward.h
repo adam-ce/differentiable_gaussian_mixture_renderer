@@ -36,6 +36,7 @@ struct ForwardCache {
     torch::Tensor tiles_touched;
     torch::Tensor point_offsets;
     torch::Tensor remaining_transparency;
+    torch::Tensor distance_marched;
 };
 
 ForwardCache forward(vol_marcher::ForwardData& forward_data);

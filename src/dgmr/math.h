@@ -369,57 +369,16 @@ STROKE_DEVICES_INLINE Gaussian2d<scalar_t> splat(
     return screen_space_gaussian;
 }
 
-template <Formulation formulation, typename scalar_t>
-STROKE_DEVICES_INLINE Gaussian2dAndValueCache<scalar_t> splat_with_cache(scalar_t weight, const glm::vec<3, scalar_t>& centroid, const glm::vec3& cov3d_scale, const glm::quat& cov3d_rot, const Camera<scalar_t>& camera, scalar_t filter_kernel_size)
+template <typename scalar_t, unsigned N>
+STROKE_DEVICES_INLINE cuda::std::tuple<glm::vec<3, scalar_t>, scalar_t>
+integrate_bins(glm::vec<3, scalar_t> current_colour, scalar_t current_transparency, const whack::Array<glm::vec<4, scalar_t>, N>& bins)
 {
-    // using vec3_t = glm::vec<3, scalar_t>;
-    // using vec4_t = glm::vec<4, scalar_t>;
-    // using mat3_t = glm::mat<3, 3, scalar_t>;
-    // const auto clamp_to_fov = [&](const vec3_t& t) {
-    //     const auto lim_x = scalar_t(1.3) * camera.tan_fovx * t.z;
-    //     const auto lim_y = scalar_t(1.3) * camera.tan_fovy * t.z;
-    //     return vec3_t { stroke::clamp(t.x, -lim_x, lim_x), stroke::clamp(t.y, -lim_y, lim_y), t.z };
-    // };
-
-    // const vec3_t unclamped_t = vec3_t(camera.view_matrix * vec4_t(centroid, scalar_t(1.)));
-    // const auto t = clamp_to_fov(unclamped_t); // clamps the size of the jakobian
-
-    // // following zwicker et al. "EWA Splatting"
-
-    // const auto l_prime = glm::length(t);
-    // // clang-format off
-    // //    const auto S = mat3_t(
-    // //        mat3_col_t(                       camera.focal_x,                                     0,                                  0),
-    // //        mat3_col_t(                                    0,                        camera.focal_y,                                  0),
-    // //        mat3_col_t(                                    0,                                     0,                                  1));
-    // // clang-format on
-    // // const auto J = make_jakobian(t, l_prime);
-    // // Avoid matrix multiplication S * J:
-    // const auto SJ = make_jakobian(t, l_prime, camera.focal_x, camera.focal_y);
-
-    // const mat3_t W = mat3_t(camera.view_matrix);
-    // mat3_t T = SJ * W;
-
-    // const auto projected_centroid = project(centroid, camera.view_projection_matrix);
-    // dgmr::math::Gaussian2d<scalar_t> screen_space_gaussian;
-    // screen_space_gaussian.centroid = ndc2screen(projected_centroid, camera.fb_width, camera.fb_height);
-
-    // const auto cov3d = math::compute_cov(cov3d_scale, cov3d_rot);
-    // const auto filter_kernel = stroke::Cov2<scalar_t>(filter_kernel_size);
-    // screen_space_gaussian.cov = affine_transform_and_cut(cov3d, T);
-    // if (orientation_dependent_density) {
-    //     screen_space_gaussian.cov += filter_kernel;
-    //     const auto J = make_jakobian(t, l_prime);
-    //     const auto detJ = det(J);
-    //     const auto detS = camera.focal_x * camera.focal_y;
-    //     const auto norm_factor = stroke::gaussian::norm_factor(screen_space_gaussian.cov);
-    //     screen_space_gaussian.weight = weight * detS * detJ * norm_factor;
-    // } else {
-    //     scalar_t aa_weight_factor = 1;
-    //     cuda::std::tie(screen_space_gaussian.cov, aa_weight_factor) = math::convolve_unnormalised_with_normalised(screen_space_gaussian.cov, filter_kernel);
-    //     screen_space_gaussian.weight = weight * aa_weight_factor;
-    // }
-
-    // return { screen_space_gaussian, T, unclamped_t };
+    for (auto k = 0u; k < bins.size(); ++k) {
+        const auto eval_t = bins[k];
+        current_colour += glm::vec<3, scalar_t>(eval_t) * current_transparency;
+        current_transparency *= stroke::exp(-eval_t.w);
+    }
+    return cuda::std::make_tuple(current_colour, current_transparency);
 }
+
 } // namespace dgmr::math

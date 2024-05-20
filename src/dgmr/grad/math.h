@@ -24,6 +24,7 @@
 #include <stroke/grad/scalar_functions.h>
 #include <stroke/grad/util.h>
 #include <stroke/linalg.h>
+#include <whack/array.h>
 
 #include "../math.h"
 
@@ -443,6 +444,30 @@ STROKE_DEVICES_INLINE stroke::grad::FourGrads<scalar_t, glm::vec<3, scalar_t>, g
 
     // return screen_space_gaussian;
     return { grad_weight3d, grad_centroid, grad_cov3d_scale, grad_cov3d_rotation };
+}
+
+template <typename scalar_t, unsigned N>
+STROKE_DEVICES_INLINE stroke::grad::ThreeGrads<glm::vec<3, scalar_t>, scalar_t, whack::Array<glm::vec<4, scalar_t>, N>>
+integrate_bins(glm::vec<3, scalar_t> current_colour, scalar_t current_transparency, scalar_t final_transparency, const whack::Array<glm::vec<4, scalar_t>, N>& bins,
+    const glm::vec<3, scalar_t>& grad_colour, scalar_t grad_transparency)
+{
+    using vec3 = glm::vec<3, scalar_t>;
+    whack::Array<glm::vec<4, scalar_t>, N> grad_bins = {};
+    for (auto k = 0u; k < bins.size(); ++k) {
+        const auto eval_t = bins[k];
+        const auto transparency_k = stroke::exp(-eval_t.w);
+        grad_bins[k].x += current_transparency * grad_colour.x;
+        grad_bins[k].y += current_transparency * grad_colour.y;
+        grad_bins[k].z += current_transparency * grad_colour.z;
+
+        const auto c_delta = current_colour - vec3(eval_t);
+        current_colour = (c_delta) / transparency_k;
+
+        const auto grad_transparency_k = (final_transparency / transparency_k) * grad_transparency + dot(grad_colour, current_colour) * current_transparency;
+        grad_bins[k].w -= grad_transparency_k * stroke::exp(-eval_t.w);
+        current_transparency *= transparency_k;
+    }
+    return { current_colour, current_transparency, grad_bins };
 }
 
 } // namespace dgmr::math::grad
