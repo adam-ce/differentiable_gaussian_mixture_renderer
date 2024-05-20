@@ -74,7 +74,7 @@ profiler_sync_extra = ""
 # if gmc.config.enable_profiler_synchronisation:
 #     profiler_sync_extra = "-DGPE_PROFILER_BUILD"
 
-cuda_extra_cuda_cflags = ["-O3",  "--use_fast_math", "--expt-extended-lambda", "-std=c++20", " --expt-relaxed-constexpr",  profiler_sync_extra]  # , "-DNDEBUG"
+cuda_extra_cuda_cflags = ["-O3",  "--use_fast_math", "--expt-extended-lambda", "-std=c++20", " -DGLM_FORCE_LEFT_HANDED -DGLM_FORCE_QUAT_DATA_WXYZ --expt-relaxed-constexpr",  profiler_sync_extra]  # , "-DNDEBUG"
 if platform.system() == "Windows":
     cuda_extra_cflags = ["/openmp", "/O2", "/fp:fast", "/DNDEBUG"]
     cpp_extra_cflags = ["/openmp", "/O2", "/fp:fast", "/std:c++20", "/DNDEBUG"]
