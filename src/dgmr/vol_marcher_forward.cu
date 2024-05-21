@@ -16,19 +16,20 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *****************************************************************************/
 
+#include "vol_marcher_forward.h"
+
 #include <cub/cub.cuh>
 #include <cub/device/device_radix_sort.cuh>
-
-#include "marching_steps.h"
-#include "math.h"
-#include "util.h"
-#include "vol_marcher_forward.h"
 
 #include <stroke/gaussian.h>
 #include <stroke/linalg.h>
 #include <whack/Tensor.h>
 #include <whack/kernel.h>
 #include <whack/torch_interop.h>
+
+#include "marching_steps.h"
+#include "math.h"
+#include "util.h"
 
 namespace {
 using namespace dgmr;
@@ -336,6 +337,8 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
                             continue;
 
                         // Iterate over current batch
+                        // don't forget about the backward pass when editing this loop.
+                        // think about moving to a function.
                         for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
                             const auto gaussian1d = gaussian::intersect_with_ray_inv_C(collected_centroid[j], collected_inv_cov3[j], ray);
                             const auto sd = stroke::sqrt(gaussian1d.C);
@@ -348,7 +351,7 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
                             auto mass_on_ray = gaussian1d.weight * collected_3d_masses[j];
                             if (mass_on_ray <= 1.1f / 255.f || mass_on_ray > 1'000)
                                 continue;
-                            if (gaussian1d.C + vol_marcher::config::workaround_variance_add_along_ray <= 0)
+                            if (gaussian1d.C <= 0)
                                 continue;
                             if (stroke::isnan(gaussian1d.centre))
                                 continue;
@@ -393,41 +396,7 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
 
                         // Iterate over current batch
                         for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
-                            const auto inv_cov = collected_inv_cov3[j];
-                            const auto gaussian1d = gaussian::intersect_with_ray_inv_C(collected_centroid[j], inv_cov, ray);
-                            const auto centroid = gaussian1d.centre;
-                            const auto variance = gaussian1d.C + vol_marcher::config::workaround_variance_add_along_ray;
-                            const auto sd = stroke::sqrt(variance);
-                            const auto inv_sd = 1 / sd;
-                            const auto mass_on_ray = gaussian1d.weight * collected_3d_masses[j];
-
-                            if (stroke::isnan(gaussian1d.centre))
-                                continue;
-                            if (mass_on_ray < 1.1f / 255.f || mass_on_ray > 1'000)
-                                continue;
-                            if (variance <= 0 || stroke::isnan(variance) || stroke::isnan(mass_on_ray) || mass_on_ray > 100'000)
-                                continue; // todo: shouldn't happen any more after implementing AA?
-
-                            const auto mass_in_bins = mass_on_ray * gaussian::integrate_normalised_inv_SD(centroid, inv_sd, { bin_borders[0], bin_borders[bin_borders.size() - 1] });
-
-                            if (mass_in_bins < 0.0001f) { // performance critical
-                                continue;
-                            }
-                            dbg_mass_in_bins_closeed += mass_in_bins;
-
-                            auto cdf_start = gaussian::cdf_inv_SD(centroid, inv_sd, current_large_step_start);
-                            for (auto k = 0u; k < bin_borders.size() - 1; ++k) {
-                                const auto right = bin_borders[k + 1];
-                                const auto cdf_end = gaussian::cdf_inv_SD(centroid, inv_sd, right);
-                                const auto mass = stroke::max(0.f, (cdf_end - cdf_start) * mass_on_ray);
-                                cdf_start = cdf_end;
-
-                                if (mass < 0.00001f)
-                                    continue;
-
-                                dbg_mass_in_bins_numerik_1 += mass;
-                                bin_eval[k] += glm::vec4(g_rgb(collected_id[j]) * mass, mass);
-                            }
+                            math::sample_gaussian(collected_3d_masses[j], g_rgb(collected_id[j]), collected_centroid[j], collected_inv_cov3[j], ray, bin_borders, &bin_eval);
                         }
                     }
 

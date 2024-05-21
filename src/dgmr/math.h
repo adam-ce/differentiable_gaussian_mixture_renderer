@@ -381,4 +381,44 @@ integrate_bins(glm::vec<3, scalar_t> current_colour, scalar_t current_transparen
     return cuda::std::make_tuple(current_colour, current_transparency);
 }
 
+template <typename scalar_t, unsigned N>
+STROKE_DEVICES_INLINE void
+sample_gaussian(const float mass, const glm::vec<3, scalar_t>& rgb, const glm::vec<3, scalar_t>& position, const stroke::Cov3<scalar_t>& inv_cov,
+    const stroke::Ray<3, scalar_t>& ray, const whack::Array<float, N>& bin_borders, whack::Array<glm::vec<4, scalar_t>, N>* bins)
+{
+    namespace gaussian = stroke::gaussian;
+    const auto gaussian1d = gaussian::intersect_with_ray_inv_C(position, inv_cov, ray);
+    const auto centroid = gaussian1d.centre;
+    const auto variance = gaussian1d.C;
+    const auto sd = stroke::sqrt(variance);
+    const auto inv_sd = 1 / sd;
+    const auto mass_on_ray = gaussian1d.weight * mass;
+
+    if (stroke::isnan(gaussian1d.centre))
+        return;
+    if (mass_on_ray < 1.1f / 255.f || mass_on_ray > 1'000)
+        return;
+    if (variance <= 0 || stroke::isnan(variance) || stroke::isnan(mass_on_ray) || mass_on_ray > 100'000)
+        return; // todo: shouldn't happen any more after implementing AA?
+
+    const auto mass_in_bins = mass_on_ray * gaussian::integrate_normalised_inv_SD(centroid, inv_sd, { bin_borders[0], bin_borders[bin_borders.size() - 1] });
+
+    if (mass_in_bins < 0.0001f) { // performance critical
+        return;
+    }
+
+    auto cdf_start = gaussian::cdf_inv_SD(centroid, inv_sd, bin_borders[0]);
+    for (auto k = 0u; k < bin_borders.size() - 1; ++k) {
+        const auto right = bin_borders[k + 1];
+        const auto cdf_end = gaussian::cdf_inv_SD(centroid, inv_sd, right);
+        const auto mass = stroke::max(0.f, (cdf_end - cdf_start) * mass_on_ray);
+        cdf_start = cdf_end;
+
+        if (mass < 0.00001f)
+            continue;
+
+        (*bins)[k] += glm::vec4(rgb * mass, mass);
+    }
+}
+
 } // namespace dgmr::math

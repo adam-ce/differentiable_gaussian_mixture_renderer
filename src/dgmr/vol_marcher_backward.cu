@@ -16,11 +16,14 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *****************************************************************************/
 
+#include "vol_marcher_backward.h"
+
 #include <cub/cub.cuh>
 #include <cub/device/device_radix_sort.cuh>
 
 #include <stroke/gaussian.h>
 #include <stroke/linalg.h>
+#include <stroke/scalar_functions.h>
 #include <whack/Tensor.h>
 #include <whack/kernel.h>
 #include <whack/torch_interop.h>
@@ -29,7 +32,6 @@
 #include "grad/math.h"
 #include "marching_steps.h"
 #include "math.h"
-#include "vol_marcher_backward.h"
 
 namespace {
 using namespace dgmr;
@@ -174,6 +176,8 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const dgmr::vol_marcher
                             continue;
 
                         // Iterate over current batch
+                        // don't forget about the forward pass when editing this loop.
+                        // think about moving to a function.
                         for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
                             const auto gaussian1d = gaussian::intersect_with_ray_inv_C(collected_centroid[j], collected_inv_cov3[j], ray);
                             const auto sd = stroke::sqrt(gaussian1d.C);
@@ -186,7 +190,7 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const dgmr::vol_marcher
                             auto mass_on_ray = gaussian1d.weight * collected_3d_masses[j];
                             if (mass_on_ray <= 1.1f / 255.f || mass_on_ray > 1'000)
                                 continue;
-                            if (gaussian1d.C + vol_marcher::config::workaround_variance_add_along_ray <= 0)
+                            if (gaussian1d.C <= 0)
                                 continue;
                             if (stroke::isnan(gaussian1d.centre))
                                 continue;
@@ -234,7 +238,7 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const dgmr::vol_marcher
                             const auto inv_cov = collected_inv_cov3[j];
                             const auto gaussian1d = gaussian::intersect_with_ray_inv_C(collected_centroid[j], inv_cov, ray);
                             const auto centroid = gaussian1d.centre;
-                            const auto variance = gaussian1d.C + vol_marcher::config::workaround_variance_add_along_ray;
+                            const auto variance = gaussian1d.C;
                             const auto sd = stroke::sqrt(variance);
                             const auto inv_sd = 1 / sd;
                             const auto mass_on_ray = gaussian1d.weight * collected_3d_masses[j];
