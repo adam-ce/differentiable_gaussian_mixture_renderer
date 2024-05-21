@@ -383,8 +383,8 @@ integrate_bins(glm::vec<3, scalar_t> current_colour, scalar_t current_transparen
 
 template <typename scalar_t, unsigned N>
 STROKE_DEVICES_INLINE void
-sample_gaussian(const float mass, const glm::vec<3, scalar_t>& rgb, const glm::vec<3, scalar_t>& position, const stroke::Cov3<scalar_t>& inv_cov,
-    const stroke::Ray<3, scalar_t>& ray, const whack::Array<float, N>& bin_borders, whack::Array<glm::vec<4, scalar_t>, N>* bins)
+sample_gaussian(const scalar_t mass, const glm::vec<3, scalar_t>& rgb, const glm::vec<3, scalar_t>& position, const stroke::Cov3<scalar_t>& inv_cov,
+    const stroke::Ray<3, scalar_t>& ray, const whack::Array<scalar_t, N>& bin_borders, whack::Array<glm::vec<4, scalar_t>, N - 1>* bins)
 {
     namespace gaussian = stroke::gaussian;
     const auto gaussian1d = gaussian::intersect_with_ray_inv_C(position, inv_cov, ray);
@@ -411,13 +411,13 @@ sample_gaussian(const float mass, const glm::vec<3, scalar_t>& rgb, const glm::v
     for (auto k = 0u; k < bin_borders.size() - 1; ++k) {
         const auto right = bin_borders[k + 1];
         const auto cdf_end = gaussian::cdf_inv_SD(centroid, inv_sd, right);
-        const auto mass = stroke::max(0.f, (cdf_end - cdf_start) * mass_on_ray);
+        const auto mass_in_bin = stroke::max(scalar_t(0), (cdf_end - cdf_start) * mass_on_ray);
         cdf_start = cdf_end;
 
-        if (mass < 0.00001f)
+        if (mass_in_bin < 0.00001f)
             continue;
 
-        (*bins)[k] += glm::vec4(rgb * mass, mass);
+        (*bins)[k] += glm::vec<4, scalar_t>(rgb * mass_in_bin, mass_in_bin);
     }
 }
 

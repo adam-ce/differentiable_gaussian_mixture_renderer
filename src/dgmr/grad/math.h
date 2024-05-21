@@ -470,4 +470,67 @@ integrate_bins(glm::vec<3, scalar_t> current_colour, scalar_t current_transparen
     return { current_colour, current_transparency, grad_bins };
 }
 
+template <typename scalar_t, unsigned N>
+STROKE_DEVICES_INLINE stroke::grad::FourGrads<scalar_t, glm::vec<3, scalar_t>, glm::vec<3, scalar_t>, stroke::Cov3<scalar_t>>
+sample_gaussian(const scalar_t mass, const glm::vec<3, scalar_t>& rgb, const glm::vec<3, scalar_t>& position, const stroke::Cov3<scalar_t>& inv_cov,
+    const stroke::Ray<3, scalar_t>& ray, const whack::Array<scalar_t, N>& bin_borders, const whack::Array<glm::vec<4, scalar_t>, N - 1>& grad_incoming)
+{
+    namespace gaussian = stroke::gaussian;
+    using vec3 = glm::vec<3, scalar_t>;
+    const auto gaussian1d = gaussian::intersect_with_ray_inv_C(position, inv_cov, ray);
+    const auto centroid = gaussian1d.centre;
+    const auto variance = gaussian1d.C;
+    const auto sd = stroke::sqrt(variance);
+    const auto inv_sd = 1 / sd;
+    const auto mass_on_ray = gaussian1d.weight * mass;
+
+    if (stroke::isnan(gaussian1d.centre))
+        return {};
+    if (mass_on_ray < 1.1f / 255.f || mass_on_ray > 1'000)
+        return {};
+    if (variance <= 0 || stroke::isnan(variance) || stroke::isnan(mass_on_ray) || mass_on_ray > 100'000)
+        return {}; // todo: shouldn't happen any more after implementing AA?
+
+    const auto mass_in_bins = mass_on_ray * gaussian::integrate_normalised_inv_SD(centroid, inv_sd, { bin_borders[0], bin_borders[bin_borders.size() - 1] });
+    if (mass_in_bins < 0.0001f) { // performance critical
+        return {};
+    }
+
+    scalar_t grad_centroid = 0;
+    scalar_t grad_inv_sd = 0;
+    scalar_t grad_mass_on_ray = 0;
+    vec3 grad_rgb = {};
+    auto cdf_start = gaussian::cdf_inv_SD(centroid, inv_sd, bin_borders[0]);
+    for (auto k = 0u; k < bin_borders.size() - 1; ++k) {
+        // const auto cdf_start = gaussian::cdf_inv_SD(centroid, inv_sd, bin_borders[k]);
+        const auto cdf_end = gaussian::cdf_inv_SD(centroid, inv_sd, bin_borders[k + 1]);
+        const auto cdf_delta = cdf_end - cdf_start;
+        const auto mass_in_bin = stroke::max(scalar_t(0), cdf_delta * mass_on_ray);
+        cdf_start = cdf_end;
+
+        if (mass_in_bin < 0.00001f)
+            continue;
+
+        // (*bins)[k] += glm::vec<4, scalar_t>(rgb * mass_in_bin, mass_in_bin);
+        grad_rgb += vec3(grad_incoming[k]) * mass_in_bin;
+        const auto grad_mass_in_bin = dot(vec3(grad_incoming[k]), rgb) + grad_incoming[k].w;
+        if (cdf_delta * mass_on_ray <= 0)
+            continue;
+        grad_mass_on_ray += grad_mass_in_bin * cdf_delta;
+        const auto grad_cdf_delta = grad_mass_in_bin * mass_on_ray;
+        const auto grad_cdf_start = -grad_cdf_delta;
+        const auto grad_cdf_end = grad_cdf_delta;
+        stroke::grad::gaussian::cdf_inv_SD(centroid, inv_sd, bin_borders[k], grad_cdf_start).addTo(&grad_centroid, &grad_inv_sd, nullptr);
+        stroke::grad::gaussian::cdf_inv_SD(centroid, inv_sd, bin_borders[k + 1], grad_cdf_end).addTo(&grad_centroid, &grad_inv_sd, nullptr);
+    }
+
+    const auto grad_gaussian1d_weight = grad_mass_on_ray * mass;
+    const auto grad_mass = grad_mass_on_ray * gaussian1d.weight;
+    const auto grad_sd = stroke::grad::divide_a_by_b(scalar_t(1), sd, grad_inv_sd).m_right;
+    const auto grad_variance = stroke::grad::sqrt(variance, grad_sd);
+    const auto grad_gaussian3d_and_ray = stroke::grad::gaussian::intersect_with_ray_inv_C(position, inv_cov, ray, { grad_gaussian1d_weight, grad_centroid, grad_variance });
+
+    return { grad_mass, grad_rgb, grad_gaussian3d_and_ray.m_left, grad_gaussian3d_and_ray.m_middle }; // grad for ray is unused
+}
+
 } // namespace dgmr::math::grad

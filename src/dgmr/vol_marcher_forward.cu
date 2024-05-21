@@ -366,7 +366,7 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
 
                     // compute sampling
                     const auto bin_borders = marching_steps::sample<config::n_small_steps>(sample_sections);
-                    whack::Array<glm::vec4, config::n_small_steps> bin_eval = {};
+                    whack::Array<glm::vec4, config::n_small_steps - 1> bin_eval = {};
 
                     float dbg_mass_in_bins_closeed = 0;
                     float dbg_mass_in_bins_numerik_1 = 0;
@@ -407,7 +407,7 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
                         break;
                     }
                     case vol_marcher::ForwardData::RenderMode::Bins: {
-                        const auto bin = stroke::min(unsigned(data.debug_render_bin), sample_sections.size() - 1);
+                        const auto bin = stroke::min(unsigned(data.debug_render_bin), bin_eval.size() - 1);
                         const auto mass = sum(bin_eval[bin]);
                         // const auto mass = (bin == 0) ? dbg_mass_in_bins_closeed : dbg_mass_in_bins_numerik_1;
                         current_colour = glm::vec3(mass * data.max_depth);

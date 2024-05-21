@@ -637,3 +637,53 @@ TEST_CASE("dgmr integrate_bins gradient 2 bin array 2 bins")
         stroke::check_gradient(fun, fun_grad, test_data, scalar_t(0.000001));
     }
 }
+
+TEST_CASE("dgmr sample_gaussian grad")
+{
+    using scalar_t = double;
+    using vec3_t = glm::vec<3, scalar_t>;
+    using vec4_t = glm::vec<4, scalar_t>;
+    using cov3_t = stroke::Cov3<scalar_t>;
+    using Gaussian1d = stroke::gaussian::ParamsWithWeight<1, scalar_t>;
+
+    constexpr auto n_bins = 4u;
+
+    whack::random::HostGenerator<scalar_t> rnd;
+    const auto gen_sampling = [&]() {
+        whack::Array<scalar_t, n_bins + 1> retval = {};
+        retval[0] = rnd.uniform() < 0.2 ? 0. : rnd.uniform();
+        for (auto i = 1u; i < retval.size(); ++i) {
+            retval[i] = retval[i - 1] + rnd.uniform() * 5. * 4. / n_bins;
+        }
+        return retval;
+    };
+
+    for (int i = 0; i < 10; ++i) {
+        const auto g_weight = rnd.uniform() * 10;
+        const auto rgb = rnd.uniform3();
+        const auto g_pos = rnd.normal3();
+        const auto g_cov = inverse(stroke::host_random_cov<3, double>(&rnd) * 1.);
+
+        const auto ray_pos = rnd.normal3() * 5.;
+        const auto target_pos = g_pos + rnd.normal3() * 0.5;
+        const auto ray = stroke::Ray<3, scalar_t> { ray_pos, normalize(target_pos - ray_pos) };
+        const auto bin_borders = gen_sampling();
+
+        const auto fun = [&](const whack::Tensor<scalar_t, 1>& input) {
+            const auto [g_weight, rgb, g_pos, g_cov] = stroke::extract<scalar_t, vec3_t, vec3_t, cov3_t>(input);
+            whack::Array<vec4_t, n_bins> samples = {};
+            dgmr::math::sample_gaussian(g_weight, rgb, g_pos, g_cov, ray, bin_borders, &samples);
+            return stroke::pack_tensor<scalar_t>(samples);
+        };
+
+        const auto fun_grad = [&](const whack::Tensor<scalar_t, 1>& input, const whack::Tensor<scalar_t, 1>& grad_output) {
+            const auto [g_weight, rgb, g_pos, g_cov] = stroke::extract<scalar_t, vec3_t, vec3_t, cov3_t>(input);
+            const auto grad_incoming = stroke::extract<whack::Array<vec4_t, n_bins>>(grad_output);
+            const auto grad_outgoing = dgmr::math::grad::sample_gaussian(g_weight, rgb, g_pos, g_cov, ray, bin_borders, grad_incoming);
+            return stroke::pack_tensor<scalar_t>(grad_outgoing);
+        };
+
+        const auto test_data = stroke::pack_tensor<scalar_t>(g_weight, rgb, g_pos, g_cov);
+        stroke::check_gradient(fun, fun_grad, test_data, scalar_t(0.000001));
+    }
+}
