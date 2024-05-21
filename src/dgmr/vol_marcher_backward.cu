@@ -80,11 +80,20 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const dgmr::vol_marcher
     grads.gm_centroids = torch::zeros({ n_gaussians, 3 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
     grads.gm_cov_scales = torch::zeros({ n_gaussians, 3 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
     grads.gm_cov_rotations = torch::zeros({ n_gaussians, 4 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
-    whack::TensorView<const SHs<3>, 1> grad_gm_sh_params_view = whack::make_tensor_view<dgmr::SHs<3>>(grads.gm_sh_params, n_gaussians);
-    whack::TensorView<const float, 1> grad_gm_weights_view = whack::make_tensor_view<float>(grads.gm_weights, n_gaussians);
-    whack::TensorView<const glm::vec3, 1> grad_gm_centroids_view = whack::make_tensor_view<glm::vec3>(grads.gm_centroids, n_gaussians);
-    whack::TensorView<const glm::vec3, 1> grad_gm_cov_scales_view = whack::make_tensor_view<glm::vec3>(grads.gm_cov_scales, n_gaussians);
-    whack::TensorView<const glm::quat, 1> grad_gm_cov_rotations_view = whack::make_tensor_view<glm::quat>(grads.gm_cov_rotations, n_gaussians);
+    whack::TensorView<const SHs<3>, 1> grad_gm_sh_params = whack::make_tensor_view<dgmr::SHs<3>>(grads.gm_sh_params, n_gaussians);
+    whack::TensorView<const float, 1> grad_gm_weights = whack::make_tensor_view<float>(grads.gm_weights, n_gaussians);
+    whack::TensorView<const glm::vec3, 1> grad_gm_centroids = whack::make_tensor_view<glm::vec3>(grads.gm_centroids, n_gaussians);
+    whack::TensorView<const glm::vec3, 1> grad_gm_cov_scales = whack::make_tensor_view<glm::vec3>(grads.gm_cov_scales, n_gaussians);
+    whack::TensorView<const glm::quat, 1> grad_gm_cov_rotations = whack::make_tensor_view<glm::quat>(grads.gm_cov_rotations, n_gaussians);
+
+    auto grad_g_rgb_data = torch::zeros({ n_gaussians, 3 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
+    auto grad_g_rgb = whack::make_tensor_view<glm::vec3>(grad_g_rgb_data, n_gaussians);
+    auto grad_g_filtered_masses_data = torch::zeros({ n_gaussians, 1 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
+    auto grad_g_filtered_masses = whack::make_tensor_view<float>(grad_g_filtered_masses_data, n_gaussians);
+    auto grad_g_centroids_data = torch::zeros({ n_gaussians, 3 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
+    auto grad_g_centroids = whack::make_tensor_view<glm::vec3>(grad_g_centroids_data, n_gaussians);
+    auto grad_g_inverse_filtered_cov3d_data = torch::zeros({ n_gaussians, 6 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
+    auto grad_g_inverse_filtered_cov3d = whack::make_tensor_view<stroke::Cov3_f>(grad_g_inverse_filtered_cov3d_data, n_gaussians);
 
     const auto n_render_gaussians = unsigned(cache.point_offsets[n_gaussians - 1].item<int>());
     if (n_render_gaussians == 0)
@@ -205,7 +214,7 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const dgmr::vol_marcher
 
                     // compute sampling
                     const auto bin_borders = marching_steps::sample<config::n_small_steps>(sample_sections);
-                    whack::Array<glm::vec4, config::n_small_steps> bin_eval = {};
+                    whack::Array<glm::vec4, config::n_small_steps - 1> bin_eval = {};
 
                     float dbg_mass_in_bins_closeed = 0;
                     float dbg_mass_in_bins_numerik_1 = 0;
@@ -235,52 +244,56 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const dgmr::vol_marcher
 
                         // Iterate over current batch
                         for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
-                            const auto inv_cov = collected_inv_cov3[j];
-                            const auto gaussian1d = gaussian::intersect_with_ray_inv_C(collected_centroid[j], inv_cov, ray);
-                            const auto centroid = gaussian1d.centre;
-                            const auto variance = gaussian1d.C;
-                            const auto sd = stroke::sqrt(variance);
-                            const auto inv_sd = 1 / sd;
-                            const auto mass_on_ray = gaussian1d.weight * collected_3d_masses[j];
-
-                            if (stroke::isnan(gaussian1d.centre))
-                                continue;
-                            if (mass_on_ray < 1.1f / 255.f || mass_on_ray > 1'000)
-                                continue;
-                            if (variance <= 0 || stroke::isnan(variance) || stroke::isnan(mass_on_ray) || mass_on_ray > 100'000)
-                                continue; // todo: shouldn't happen any more after implementing AA?
-
-                            const auto mass_in_bins = mass_on_ray * gaussian::integrate_normalised_inv_SD(centroid, inv_sd, { bin_borders[0], bin_borders[bin_borders.size() - 1] });
-
-                            if (mass_in_bins < 0.0001f) { // performance critical
-                                continue;
-                            }
-                            dbg_mass_in_bins_closeed += mass_in_bins;
-
-                            auto cdf_start = gaussian::cdf_inv_SD(centroid, inv_sd, current_large_step_start);
-                            for (auto k = 0u; k < bin_borders.size() - 1; ++k) {
-                                const auto right = bin_borders[k + 1];
-                                const auto cdf_end = gaussian::cdf_inv_SD(centroid, inv_sd, right);
-                                const auto mass = stroke::max(0.f, (cdf_end - cdf_start) * mass_on_ray);
-                                cdf_start = cdf_end;
-
-                                if (mass < 0.00001f)
-                                    continue;
-
-                                dbg_mass_in_bins_numerik_1 += mass;
-                                bin_eval[k] += glm::vec4(g_rgb(collected_id[j]) * mass, mass);
-                            }
+                            math::sample_gaussian(collected_3d_masses[j], g_rgb(collected_id[j]), collected_centroid[j], collected_inv_cov3[j], ray, bin_borders, &bin_eval);
                         }
                     }
 
                     // blend //todo gradient backwards
-                    whack::Array<glm::vec4, config::n_small_steps> grad_bin_eval;
-                    // STROKE_DEVICES_INLINE stroke::grad::ThreeGrads<glm::vec<3, scalar_t>, scalar_t, whack::Array<glm::vec<4, scalar_t>, N>>
-                    //  integrate_bins(glm::vec<3, scalar_t> current_colour, scalar_t current_transparency, scalar_t final_transparency, const whack::Array<glm::vec<4, scalar_t>, N>& bins,
-                    // const glm::vec<3, scalar_t>& grad_colour, scalar_t grad_transparency)
+                    whack::Array<glm::vec4, config::n_small_steps - 1> grad_bin_eval;
                     cuda::std::tie(current_colour, current_transparency, grad_bin_eval) = math::grad::integrate_bins(current_colour, current_transparency, final_transparency, bin_eval, grad_current_colour, grad_current_transparency);
 
-                    // todo gradient for #compute samples and write back to individual gaussians
+                    // todo gradient for compute samples and write back to individual gaussians
+                    n_toDo = render_g_range.y - render_g_range.x;
+                    for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {
+                        // End if entire block votes that it is done rasterizing
+                        const int num_done = __syncthreads_count(done);
+                        if (num_done == render_block_size)
+                            break;
+
+                        // Collectively fetch per-Gaussian data from global to shared
+                        const int progress = i * render_block_size + thread_rank;
+                        if (render_g_range.x + progress < render_g_range.y) {
+                            unsigned coll_id = b_point_list(render_g_range.x + progress);
+                            assert(coll_id < n_gaussians);
+                            collected_id[thread_rank] = coll_id;
+                            collected_centroid[thread_rank] = data.gm_centroids(coll_id);
+                            collected_inv_cov3[thread_rank] = g_inverse_filtered_cov3d(coll_id);
+                            collected_3d_masses[thread_rank] = g_filtered_masses(coll_id);
+                        }
+                        __syncthreads();
+
+                        if (done)
+                            continue;
+
+                        // Iterate over current batch
+                        for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
+                            // math::sample_gaussian(collected_3d_masses[j], g_rgb(collected_id[j]), collected_centroid[j], collected_inv_cov3[j], ray, bin_borders, &bin_eval);
+                            const auto grad_weight_rgb_pos_cov = dgmr::math::grad::sample_gaussian(collected_3d_masses[j], g_rgb(collected_id[j]), collected_centroid[j], collected_inv_cov3[j], ray, bin_borders, grad_bin_eval);
+                            const auto gaussian_id = collected_id[j];
+                            atomicAdd(&grad_g_filtered_masses(gaussian_id), grad_weight_rgb_pos_cov.m_first);
+
+                            atomicAdd(&grad_g_rgb(gaussian_id).x, grad_weight_rgb_pos_cov.m_second.x);
+                            atomicAdd(&grad_g_rgb(gaussian_id).y, grad_weight_rgb_pos_cov.m_second.y);
+                            atomicAdd(&grad_g_rgb(gaussian_id).z, grad_weight_rgb_pos_cov.m_second.z);
+
+                            atomicAdd(&grad_g_centroids(gaussian_id).x, grad_weight_rgb_pos_cov.m_third.x);
+                            atomicAdd(&grad_g_centroids(gaussian_id).y, grad_weight_rgb_pos_cov.m_third.y);
+                            atomicAdd(&grad_g_centroids(gaussian_id).z, grad_weight_rgb_pos_cov.m_third.z);
+
+                            for (auto i = 0u; i < 6; ++i)
+                                atomicAdd(&grad_g_inverse_filtered_cov3d(gaussian_id)[i], grad_weight_rgb_pos_cov.m_fourth[i]);
+                        }
+                    }
 
                     done = done || sample_sections.size() == 0 || current_transparency < 1.f / 255.f;
                     const int num_done = __syncthreads_count(done);
