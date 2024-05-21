@@ -462,5 +462,5 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
                 remaining_transparency(pix.y, pix.x) = current_transparency;
             });
     }
-    return {};
+    return cache;
 }
