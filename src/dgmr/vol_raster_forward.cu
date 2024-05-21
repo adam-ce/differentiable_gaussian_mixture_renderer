@@ -131,8 +131,8 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                 // centroid, data.gm_cov_scales(idx), data.gm_cov_rotations(idx), vol_raster::config::gaussian_relevance_sigma, data.cam_poition)
                 // .max;
 
-                // convert spherical harmonics coefficients to RGB color.
-                g_rgb(idx) = computeColorFromSH(data.sh_degree, centroid, data.cam_poition, data.gm_sh_params(idx), &g_rgb_sh_clamped(idx));
+                const auto direction = glm::normalize(centroid - data.cam_poition);
+                cuda::std::tie(g_rgb(idx), g_rgb_sh_clamped(idx)) = math::sh_to_colour(data.gm_sh_params(idx), data.sh_degree, direction);
                 g_inverse_filtered_cov3d(idx) = stroke::inverse(filtered_cov_3d);
             });
     }

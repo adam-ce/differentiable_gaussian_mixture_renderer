@@ -139,11 +139,12 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
 
                 const auto inverse_filtered_cov = stroke::inverse(filtered_cov_3d);
 
-                // g_depths(idx) = glm::length(data.cam_poition - centroid);
-                g_depths(idx) = (glm::length(data.cam_poition - centroid) - math::max(scales) * config::gaussian_relevance_sigma / 2);
+                const auto dist = glm::length(data.cam_poition - centroid);
+                // g_depths(idx) = dist;
+                g_depths(idx) = (dist - math::max(scales) * config::gaussian_relevance_sigma / 2);
 
-                // convert spherical harmonics coefficients to RGB color.
-                g_rgb(idx) = util::computeColorFromSH(data.sh_degree, centroid, data.cam_poition, data.gm_sh_params(idx), &g_rgb_sh_clamped(idx));
+                const auto direction = (centroid - data.cam_poition) / dist;
+                cuda::std::tie(g_rgb(idx), g_rgb_sh_clamped(idx)) = math::sh_to_colour(data.gm_sh_params(idx), data.sh_degree, direction);
                 g_inverse_filtered_cov3d(idx) = inverse_filtered_cov;
                 g_filtered_masses(idx) = mass;
             });

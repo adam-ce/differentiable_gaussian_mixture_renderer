@@ -108,8 +108,8 @@ dgmr::Statistics dgmr::splat_forward(SplatForwardData& data)
 
                 g_depths(idx) = glm::length(data.cam_poition - centroid);
 
-                // convert spherical harmonics coefficients to RGB color.
-                g_rgb(idx) = util::computeColorFromSH(data.sh_degree, centroid, data.cam_poition, data.gm_sh_params(idx), &g_rgb_sh_clamped(idx));
+                const auto direction = glm::normalize(centroid - data.cam_poition);
+                cuda::std::tie(g_rgb(idx), g_rgb_sh_clamped(idx)) = math::sh_to_colour(data.gm_sh_params(idx), data.sh_degree, direction);
 
                 // Inverse 2D covariance and opacity neatly pack into one float4
                 const auto conic2d = inverse(screen_space_gaussian.cov);

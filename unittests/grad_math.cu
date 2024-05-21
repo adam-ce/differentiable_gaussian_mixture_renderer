@@ -16,11 +16,12 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *****************************************************************************/
 
-#include <stroke/pretty_printers.h>
-#include <stroke/unittest/gradcheck.h>
+#include <stroke/unittest/gradcheck.h> // must go first (so that pretty printers work)
 
 #include <catch2/catch_test_macros.hpp>
+
 #include <dgmr/grad/math.h>
+#include <dgmr/math.h>
 
 #include "unit_test_utils.h"
 
@@ -685,5 +686,40 @@ TEST_CASE("dgmr sample_gaussian grad")
 
         const auto test_data = stroke::pack_tensor<scalar_t>(g_weight, rgb, g_pos, g_cov);
         stroke::check_gradient(fun, fun_grad, test_data, scalar_t(0.000001));
+    }
+}
+
+TEST_CASE("dgmr spherical harmonics grad degree 1")
+{
+    using scalar_t = float; // sh don't support double atm
+    using vec3_t = glm::vec<3, scalar_t>;
+
+    whack::random::HostGenerator<scalar_t> rnd;
+    const auto gen_harmonic = [&]() {
+        dgmr::SHs<3> retval = {};
+        for (auto i = 0u; i < retval.size(); ++i) {
+            retval[i] = rnd.normal3();
+        }
+        return retval;
+    };
+
+    for (int i = 0; i < 10; ++i) {
+        const auto fun = [&](const whack::Tensor<scalar_t, 1>& input) {
+            const auto [sh, dir] = stroke::extract<dgmr::SHs<3>, vec3_t>(input);
+            const auto [rgb, clamped] = dgmr::math::sh_to_colour(sh, 1, dir);
+            return stroke::pack_tensor<scalar_t>(rgb);
+        };
+
+        const auto fun_grad = [&](const whack::Tensor<scalar_t, 1>& input, const whack::Tensor<scalar_t, 1>& grad_output) {
+            const auto [sh, dir] = stroke::extract<dgmr::SHs<3>, vec3_t>(input);
+            const auto [rgb, clamped] = dgmr::math::sh_to_colour(sh, 1, dir);
+
+            const auto grad_incoming = stroke::extract<vec3_t>(grad_output);
+            const auto grad_outgoing = dgmr::math::grad::sh_to_colour(sh, 1, dir, grad_incoming, clamped);
+            return stroke::pack_tensor<scalar_t>(grad_outgoing);
+        };
+
+        const auto test_data = stroke::pack_tensor<scalar_t>(gen_harmonic(), normalize(rnd.normal3()));
+        stroke::check_gradient(fun, fun_grad, test_data, scalar_t(0.001));
     }
 }

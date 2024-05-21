@@ -199,15 +199,89 @@ STROKE_DEVICES_INLINE glm::vec<3, scalar_t> smaller2(const glm::vec<3, scalar_t>
     return glm::vec<3, scalar_t>(grad[0], grad[1], 0);
 }
 
+STROKE_DEVICES_INLINE stroke::grad::TwoGrads<SHs<3>, glm::vec3>
+sh_to_colour(const SHs<3>& sh, int deg, const glm::vec3& direction, const glm::vec3& incoming_grad, const glm::bvec3& clamped)
+{
+    // based on 3D Gaussian Splatting for Real-Time Radiance Field Rendering by Kerbl, Kopanas et al. (2023)
+    glm::vec3 dL_dRGB = incoming_grad * glm::vec3(clamped);
+
+    glm::vec3 dRGBdx = {};
+    glm::vec3 dRGBdy = {};
+    glm::vec3 dRGBdz = {};
+    float x = direction.x;
+    float y = direction.y;
+    float z = direction.z;
+
+    SHs<3> dL_dsh = {};
+
+    float dRGBdsh0 = SH_C0;
+    dL_dsh[0] = dRGBdsh0 * dL_dRGB;
+    if (deg > 0) {
+        float dRGBdsh1 = -SH_C1 * y;
+        float dRGBdsh2 = SH_C1 * z;
+        float dRGBdsh3 = -SH_C1 * x;
+        dL_dsh[1] = dRGBdsh1 * dL_dRGB;
+        dL_dsh[2] = dRGBdsh2 * dL_dRGB;
+        dL_dsh[3] = dRGBdsh3 * dL_dRGB;
+
+        dRGBdx = -SH_C1 * sh[3];
+        dRGBdy = -SH_C1 * sh[1];
+        dRGBdz = SH_C1 * sh[2];
+
+        if (deg > 1) {
+            float xx = x * x;
+            float yy = y * y;
+            float zz = z * z;
+            float xy = x * y;
+            float yz = y * z;
+            float xz = x * z;
+
+            float dRGBdsh4 = SH_C2[0] * xy;
+            float dRGBdsh5 = SH_C2[1] * yz;
+            float dRGBdsh6 = SH_C2[2] * (2.f * zz - xx - yy);
+            float dRGBdsh7 = SH_C2[3] * xz;
+            float dRGBdsh8 = SH_C2[4] * (xx - yy);
+            dL_dsh[4] = dRGBdsh4 * dL_dRGB;
+            dL_dsh[5] = dRGBdsh5 * dL_dRGB;
+            dL_dsh[6] = dRGBdsh6 * dL_dRGB;
+            dL_dsh[7] = dRGBdsh7 * dL_dRGB;
+            dL_dsh[8] = dRGBdsh8 * dL_dRGB;
+
+            dRGBdx += SH_C2[0] * y * sh[4] + SH_C2[2] * 2.f * -x * sh[6] + SH_C2[3] * z * sh[7] + SH_C2[4] * 2.f * x * sh[8];
+            dRGBdy += SH_C2[0] * x * sh[4] + SH_C2[1] * z * sh[5] + SH_C2[2] * 2.f * -y * sh[6] + SH_C2[4] * 2.f * -y * sh[8];
+            dRGBdz += SH_C2[1] * y * sh[5] + SH_C2[2] * 2.f * 2.f * z * sh[6] + SH_C2[3] * x * sh[7];
+
+            if (deg > 2) {
+                float dRGBdsh9 = SH_C3[0] * y * (3.f * xx - yy);
+                float dRGBdsh10 = SH_C3[1] * xy * z;
+                float dRGBdsh11 = SH_C3[2] * y * (4.f * zz - xx - yy);
+                float dRGBdsh12 = SH_C3[3] * z * (2.f * zz - 3.f * xx - 3.f * yy);
+                float dRGBdsh13 = SH_C3[4] * x * (4.f * zz - xx - yy);
+                float dRGBdsh14 = SH_C3[5] * z * (xx - yy);
+                float dRGBdsh15 = SH_C3[6] * x * (xx - 3.f * yy);
+                dL_dsh[9] = dRGBdsh9 * dL_dRGB;
+                dL_dsh[10] = dRGBdsh10 * dL_dRGB;
+                dL_dsh[11] = dRGBdsh11 * dL_dRGB;
+                dL_dsh[12] = dRGBdsh12 * dL_dRGB;
+                dL_dsh[13] = dRGBdsh13 * dL_dRGB;
+                dL_dsh[14] = dRGBdsh14 * dL_dRGB;
+                dL_dsh[15] = dRGBdsh15 * dL_dRGB;
+
+                dRGBdx += (SH_C3[0] * sh[9] * 3.f * 2.f * xy + SH_C3[1] * sh[10] * yz + SH_C3[2] * sh[11] * -2.f * xy + SH_C3[3] * sh[12] * -3.f * 2.f * xz + SH_C3[4] * sh[13] * (-3.f * xx + 4.f * zz - yy) + SH_C3[5] * sh[14] * 2.f * xz + SH_C3[6] * sh[15] * 3.f * (xx - yy));
+                dRGBdy += (SH_C3[0] * sh[9] * 3.f * (xx - yy) + SH_C3[1] * sh[10] * xz + SH_C3[2] * sh[11] * (-3.f * yy + 4.f * zz - xx) + SH_C3[3] * sh[12] * -3.f * 2.f * yz + SH_C3[4] * sh[13] * -2.f * xy + SH_C3[5] * sh[14] * -2.f * yz + SH_C3[6] * sh[15] * -3.f * 2.f * xy);
+                dRGBdz += (SH_C3[1] * sh[10] * xy + SH_C3[2] * sh[11] * 4.f * 2.f * yz + SH_C3[3] * sh[12] * 3.f * (2.f * zz - xx - yy) + SH_C3[4] * sh[13] * 4.f * 2.f * xz + SH_C3[5] * sh[14] * (xx - yy));
+            }
+        }
+    }
+
+    glm::vec3 dL_ddir(glm::dot(dRGBdx, dL_dRGB), glm::dot(dRGBdy, dL_dRGB), glm::dot(dRGBdz, dL_dRGB));
+    return { dL_dsh, dL_ddir };
+}
+
 template <dgmr::Formulation formulation, typename scalar_t>
 STROKE_DEVICES_INLINE stroke::grad::TwoGrads<scalar_t, glm::vec<3, scalar_t>>
 weight_to_mass(scalar_t weight, const glm::vec<3, scalar_t>& cov3d_scale, const scalar_t& incoming_grad)
 {
-    using vec3_t = glm::vec<3, scalar_t>;
-    using vec4_t = glm::vec<4, scalar_t>;
-    using mat3_t = glm::mat<3, 3, scalar_t>;
-    using quat_t = glm::qua<scalar_t>;
-
     switch (formulation) {
     case Formulation::Opacity: {
         assert(false);
