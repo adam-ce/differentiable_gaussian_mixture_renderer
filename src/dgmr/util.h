@@ -23,12 +23,12 @@
 
 namespace dgmr::util {
 // my own:
-STROKE_DEVICES_INLINE glm::vec3 clamp_cov_scales(const glm::vec3& cov_scales)
-{
-    const auto max_value = stroke::min(50.f, glm::compMax(cov_scales));
-    const auto min_value = max_value * 0.01f;
-    return glm::clamp(cov_scales, min_value, max_value);
-}
+// STROKE_DEVICES_INLINE glm::vec3 clamp_cov_scales(const glm::vec3& cov_scales)
+// {
+//     const auto max_value = stroke::min(50.f, glm::compMax(cov_scales));
+//     const auto min_value = max_value * 0.01f;
+//     return glm::clamp(cov_scales, min_value, max_value);
+// }
 // from inria:
 #define CHECK_CUDA(debug)                                                                                              \
     if (debug) {                                                                                                       \

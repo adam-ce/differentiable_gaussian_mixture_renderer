@@ -32,6 +32,7 @@
 #include "grad/math.h"
 #include "marching_steps.h"
 #include "math.h"
+#include "util.h"
 
 namespace {
 using namespace dgmr;
@@ -80,18 +81,16 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const dgmr::vol_marcher
     grads.gm_centroids = torch::zeros({ n_gaussians, 3 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
     grads.gm_cov_scales = torch::zeros({ n_gaussians, 3 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
     grads.gm_cov_rotations = torch::zeros({ n_gaussians, 4 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
-    whack::TensorView<const SHs<3>, 1> grad_gm_sh_params = whack::make_tensor_view<dgmr::SHs<3>>(grads.gm_sh_params, n_gaussians);
-    whack::TensorView<const float, 1> grad_gm_weights = whack::make_tensor_view<float>(grads.gm_weights, n_gaussians);
-    whack::TensorView<const glm::vec3, 1> grad_gm_centroids = whack::make_tensor_view<glm::vec3>(grads.gm_centroids, n_gaussians);
-    whack::TensorView<const glm::vec3, 1> grad_gm_cov_scales = whack::make_tensor_view<glm::vec3>(grads.gm_cov_scales, n_gaussians);
-    whack::TensorView<const glm::quat, 1> grad_gm_cov_rotations = whack::make_tensor_view<glm::quat>(grads.gm_cov_rotations, n_gaussians);
+    whack::TensorView<SHs<3>, 1> grad_gm_sh_params = whack::make_tensor_view<dgmr::SHs<3>>(grads.gm_sh_params, n_gaussians);
+    whack::TensorView<float, 1> grad_gm_weights = whack::make_tensor_view<float>(grads.gm_weights, n_gaussians);
+    whack::TensorView<glm::vec3, 1> grad_gm_centroids = whack::make_tensor_view<glm::vec3>(grads.gm_centroids, n_gaussians);
+    whack::TensorView<glm::vec3, 1> grad_gm_cov_scales = whack::make_tensor_view<glm::vec3>(grads.gm_cov_scales, n_gaussians);
+    whack::TensorView<glm::quat, 1> grad_gm_cov_rotations = whack::make_tensor_view<glm::quat>(grads.gm_cov_rotations, n_gaussians);
 
     auto grad_g_rgb_data = torch::zeros({ n_gaussians, 3 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
     auto grad_g_rgb = whack::make_tensor_view<glm::vec3>(grad_g_rgb_data, n_gaussians);
     auto grad_g_filtered_masses_data = torch::zeros({ n_gaussians, 1 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
     auto grad_g_filtered_masses = whack::make_tensor_view<float>(grad_g_filtered_masses_data, n_gaussians);
-    auto grad_g_centroids_data = torch::zeros({ n_gaussians, 3 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
-    auto grad_g_centroids = whack::make_tensor_view<glm::vec3>(grad_g_centroids_data, n_gaussians);
     auto grad_g_inverse_filtered_cov3d_data = torch::zeros({ n_gaussians, 6 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
     auto grad_g_inverse_filtered_cov3d = whack::make_tensor_view<stroke::Cov3_f>(grad_g_inverse_filtered_cov3d_data, n_gaussians);
 
@@ -286,9 +285,9 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const dgmr::vol_marcher
                             atomicAdd(&grad_g_rgb(gaussian_id).y, grad_weight_rgb_pos_cov.m_second.y);
                             atomicAdd(&grad_g_rgb(gaussian_id).z, grad_weight_rgb_pos_cov.m_second.z);
 
-                            atomicAdd(&grad_g_centroids(gaussian_id).x, grad_weight_rgb_pos_cov.m_third.x);
-                            atomicAdd(&grad_g_centroids(gaussian_id).y, grad_weight_rgb_pos_cov.m_third.y);
-                            atomicAdd(&grad_g_centroids(gaussian_id).z, grad_weight_rgb_pos_cov.m_third.z);
+                            atomicAdd(&grad_gm_centroids(gaussian_id).x, grad_weight_rgb_pos_cov.m_third.x);
+                            atomicAdd(&grad_gm_centroids(gaussian_id).y, grad_weight_rgb_pos_cov.m_third.y);
+                            atomicAdd(&grad_gm_centroids(gaussian_id).z, grad_weight_rgb_pos_cov.m_third.z);
 
                             for (auto i = 0u; i < 6; ++i)
                                 atomicAdd(&grad_g_inverse_filtered_cov3d(gaussian_id)[i], grad_weight_rgb_pos_cov.m_fourth[i]);
@@ -304,68 +303,73 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const dgmr::vol_marcher
             });
     }
 
-    // // preprocess backward, run per Gaussian
-    // {
-    //     math::Camera<float> camera {
-    //         data.view_matrix, data.proj_matrix, focal_x, focal_y, data.tan_fovx, data.tan_fovy, fb_width, fb_height
-    //     };
+    // preprocess, run per Gaussian
+    {
+        math::Camera<float> camera {
+            data.view_matrix, data.proj_matrix, focal_x, focal_y, data.tan_fovx, data.tan_fovy, fb_width, fb_height
+        };
 
-    //     const dim3 block_dim = { 128 };
-    //     const dim3 grid_dim = whack::grid_dim_from_total_size({ data.gm_weights.size<0>() }, block_dim);
-    //     whack::start_parallel(
-    //         whack::Location::Device, grid_dim, block_dim, WHACK_KERNEL(=) {
-    //             WHACK_UNUSED(whack_gridDim);
-    //             const auto idx = whack_blockIdx.x * whack_blockDim.x + whack_threadIdx.x;
-    //             if (idx >= n_gaussians)
-    //                 return;
+        const dim3 block_dim = { 128 };
+        const dim3 grid_dim = whack::grid_dim_from_total_size({ data.gm_weights.size<0>() }, block_dim);
+        whack::start_parallel(
+            whack::Location::Device, grid_dim, block_dim, WHACK_KERNEL(=) {
+                WHACK_UNUSED(whack_gridDim);
+                const auto idx = whack_blockIdx.x * whack_blockDim.x + whack_threadIdx.x;
+                if (idx >= n_gaussians)
+                    return;
+                if (g_tiles_touched(idx) == 0)
+                    return;
 
-    //             // Initialize touched tiles to 0. If this isn't changed,
-    //             // this Gaussian will not be processed further.
-    //             g_tiles_touched(idx) = 0;
+                const auto centroid = data.gm_centroids(idx); // #######
+                if ((data.view_matrix * glm::vec4(centroid, 1.f)).z < 0.2) // adam doesn't understand, why projection matrix > 0 isn't enough.
+                    return;
 
-    //             const auto centroid = data.gm_centroids(idx);
-    //             if ((data.view_matrix * glm::vec4(centroid, 1.f)).z < 0.2) // adam doesn't understand, why projection matrix > 0 isn't enough.
-    //                 return;
+                const auto weight = data.gm_weights(idx);
+                const auto scales = data.gm_cov_scales(idx);
+                const auto rotation = data.gm_cov_rotations(idx);
+                const auto dist = glm::length(centroid - data.cam_poition);
 
-    //             const auto weights = data.gm_weights(idx);
-    //             const auto scales = data.gm_cov_scales(idx) * data.cov_scale_multiplier;
-    //             const auto rotations = data.gm_cov_rotations(idx);
+                const auto cov3d = math::compute_cov(scales, rotation);
 
-    //             const auto screen_space_gaussian = math::splat<vol_marcher::config::gaussian_mixture_formulation>(weights, centroid, scales, rotations, camera, 0.3f);
+                // low pass filter to combat aliasing
+                const auto filter_kernel_size = dist * aa_distance_multiplier;
+                const auto filter_kernel_size_sq = filter_kernel_size * filter_kernel_size;
+                const auto filtered_cov_3d = cov3d + stroke::Cov3_f(filter_kernel_size_sq);
+                const auto filtered_scales = scales + glm::vec3(filter_kernel_size_sq);
+                const auto mass = math::weight_to_mass<vol_marcher::config::gaussian_mixture_formulation>(weight, filtered_scales);
+                if (mass <= 0)
+                    return; // clipped
 
-    //             const auto cov3d = math::compute_cov(clamp_cov_scales(data.gm_cov_scales(idx)), data.gm_cov_rotations(idx));
+                // g_filtered_masses(idx) = mass;
+                // const auto inverse_filtered_cov = stroke::inverse(filtered_cov_3d);
+                // g_inverse_filtered_cov3d(idx) = inverse_filtered_cov;
+                const auto direction = (centroid - data.cam_poition) / dist;
+                // cuda::std::tie(g_rgb(idx), g_rgb_sh_clamped(idx)) = math::sh_to_colour(data.gm_sh_params(idx), data.sh_degree, direction);
 
-    //             // low pass filter to combat aliasing
-    //             const auto filter_kernel_size = glm::distance(centroid, data.cam_poition) * aa_distance_multiplier;
-    //             const auto filtered_cov_3d = cov3d + stroke::Cov3_f(filter_kernel_size * filter_kernel_size);
-    //             const auto mass = math::weight_to_mass<vol_marcher::config::gaussian_mixture_formulation>(weights, scales + glm::vec3(filter_kernel_size * filter_kernel_size));
-    //             if (mass <= 0)
-    //                 return; // clipped
+                // grad computations
+                const auto position_delta = (centroid - data.cam_poition);
+                const auto grad_sh_and_direction = math::grad::sh_to_colour(data.gm_sh_params(idx), data.sh_degree, direction, grad_g_rgb(idx), g_rgb_sh_clamped(idx));
+                grad_gm_sh_params(idx) = grad_sh_and_direction.m_left;
+                auto [grad_centroid, grad_dist] = stroke::grad::divide_a_by_b(position_delta, dist, grad_sh_and_direction.m_right);
 
-    //             // using the more aggressive computation for calculating overlapping tiles:
-    //             {
-    //                 const glm::uvec2 my_rect = { (int)ceil(3.f * sqrt(screen_space_gaussian.cov[0])), (int)ceil(3.f * sqrt(screen_space_gaussian.cov[2])) };
-    //                 g_rects(idx) = my_rect;
-    //                 glm::uvec2 rect_min, rect_max;
-    //                 getRect(screen_space_gaussian.centroid, my_rect, &rect_min, &rect_max, render_grid_dim);
+                const auto grad_filtered_cov_3d = stroke::grad::inverse(filtered_cov_3d, grad_g_inverse_filtered_cov3d(idx));
+                const auto grad_mass = grad_g_filtered_masses(idx);
+                const auto [grad_weight, grad_filtered_scales] = math::grad::weight_to_mass<vol_marcher::config::gaussian_mixture_formulation>(weight, filtered_scales, grad_mass);
+                auto grad_scales = grad_filtered_scales;
+                auto grad_filter_kernel_size_sq = sum(grad_filtered_scales);
+                const auto grad_cov3d = grad_filtered_cov_3d;
+                grad_filter_kernel_size_sq += grad_filtered_cov_3d[0] + grad_filtered_cov_3d[3] + grad_filtered_cov_3d[5];
+                const auto grad_filter_kernel_size = grad_filter_kernel_size_sq * 2 * filter_kernel_size;
+                grad_dist += grad_filter_kernel_size * aa_distance_multiplier;
+                glm::quat grad_rotation = { 0, 0, 0, 0 };
+                math::grad::compute_cov(scales, rotation, grad_cov3d).addTo(&grad_scales, &grad_rotation);
+                grad_centroid += stroke::grad::length(centroid - data.cam_poition, grad_dist);
 
-    //                 const auto tiles_touched = (rect_max.x - rect_min.x) * (rect_max.y - rect_min.y);
-    //                 if (tiles_touched == 0)
-    //                     return; // clipped
-    //                 g_tiles_touched(idx) = tiles_touched;
-    //                 g_points_xy_image(idx) = screen_space_gaussian.centroid;
-    //             }
-
-    //             const auto inverse_filtered_cov = stroke::inverse(filtered_cov_3d);
-
-    //             // g_depths(idx) = glm::length(data.cam_poition - centroid);
-    //             g_depths(idx) = (glm::length(data.cam_poition - centroid) - math::max(scales) * config::gaussian_relevance_sigma / 2);
-
-    //             // convert spherical harmonics coefficients to RGB color.
-    //             g_rgb(idx) = computeColorFromSH(data.sh_degree, centroid, data.cam_poition, data.gm_sh_params(idx), &g_rgb_sh_clamped(idx));
-    //             g_inverse_filtered_cov3d(idx) = inverse_filtered_cov;
-    //             g_filtered_masses(idx) = mass;
-    //         });
-    // }
+                grad_gm_cov_rotations(idx) = grad_rotation;
+                grad_gm_cov_scales(idx) = grad_scales;
+                grad_gm_weights(idx) = grad_weight;
+                grad_gm_centroids(idx) += grad_centroid;
+            });
+    }
     return grads;
 }

@@ -108,18 +108,20 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
                 if ((data.view_matrix * glm::vec4(centroid, 1.f)).z < 0.2) // adam doesn't understand, why projection matrix > 0 isn't enough.
                     return;
 
-                const auto weights = data.gm_weights(idx);
+                const auto weight = data.gm_weights(idx);
                 const auto scales = data.gm_cov_scales(idx) * data.cov_scale_multiplier;
-                const auto rotations = data.gm_cov_rotations(idx);
+                const auto rotation = data.gm_cov_rotations(idx);
+                const auto dist = glm::length(data.cam_poition - centroid);
 
-                const auto screen_space_gaussian = math::splat<vol_marcher::config::gaussian_mixture_formulation>(weights, centroid, scales, rotations, camera, 0.3f);
+                const auto screen_space_gaussian = math::splat<vol_marcher::config::gaussian_mixture_formulation>(weight, centroid, scales, rotation, camera, 0.3f);
 
-                const auto cov3d = math::compute_cov(util::clamp_cov_scales(data.gm_cov_scales(idx)), data.gm_cov_rotations(idx));
+                const auto cov3d = math::compute_cov(scales, rotation);
 
                 // low pass filter to combat aliasing
-                const auto filter_kernel_size = glm::distance(centroid, data.cam_poition) * aa_distance_multiplier;
+                const auto filter_kernel_size = dist * aa_distance_multiplier;
                 const auto filtered_cov_3d = cov3d + stroke::Cov3_f(filter_kernel_size * filter_kernel_size);
-                const auto mass = math::weight_to_mass<vol_marcher::config::gaussian_mixture_formulation>(weights, scales + glm::vec3(filter_kernel_size * filter_kernel_size));
+                const auto filtered_scales = scales + glm::vec3(filter_kernel_size * filter_kernel_size);
+                const auto mass = math::weight_to_mass<vol_marcher::config::gaussian_mixture_formulation>(weight, filtered_scales);
                 if (mass <= 0)
                     return; // clipped
 
@@ -139,7 +141,6 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
 
                 const auto inverse_filtered_cov = stroke::inverse(filtered_cov_3d);
 
-                const auto dist = glm::length(data.cam_poition - centroid);
                 // g_depths(idx) = dist;
                 g_depths(idx) = (dist - math::max(scales) * config::gaussian_relevance_sigma / 2);
 

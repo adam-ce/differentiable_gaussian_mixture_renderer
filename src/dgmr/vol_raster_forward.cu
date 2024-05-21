@@ -105,7 +105,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
 
                 const auto screen_space_gaussian = math::splat<vol_raster::config::gaussian_mixture_formulation>(weights, centroid, scales, rotations, camera, 0.3f);
 
-                const auto cov3d = math::compute_cov(clamp_cov_scales(data.gm_cov_scales(idx)), data.gm_cov_rotations(idx));
+                const auto cov3d = math::compute_cov(scales, rotations);
 
                 // low pass filter to combat aliasing
                 const auto filter_kernel_size = glm::distance(centroid, data.cam_poition) * aa_distance_multiplier;
