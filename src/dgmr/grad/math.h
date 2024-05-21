@@ -447,7 +447,7 @@ STROKE_DEVICES_INLINE stroke::grad::FourGrads<scalar_t, glm::vec<3, scalar_t>, g
 }
 
 template <typename scalar_t, unsigned N>
-STROKE_DEVICES_INLINE stroke::grad::ThreeGrads<glm::vec<3, scalar_t>, scalar_t, whack::Array<glm::vec<4, scalar_t>, N>>
+STROKE_DEVICES_INLINE cuda::std::tuple<glm::vec<3, scalar_t>, scalar_t, whack::Array<glm::vec<4, scalar_t>, N>>
 integrate_bins(glm::vec<3, scalar_t> current_colour, scalar_t current_transparency, scalar_t final_transparency, const whack::Array<glm::vec<4, scalar_t>, N>& bins,
     const glm::vec<3, scalar_t>& grad_colour, scalar_t grad_transparency)
 {

@@ -84,8 +84,6 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
     cache.remaining_transparency = torch::empty({ fb_height, fb_width }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
     auto remaining_transparency = whack::make_tensor_view<float>(cache.remaining_transparency, fb_height, fb_width);
 
-    cache.distance_marched = torch::empty({ fb_height, fb_width }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
-    auto distance_marched = whack::make_tensor_view<float>(cache.distance_marched, fb_height, fb_width);
     // preprocess, run per Gaussian
     {
         math::Camera<float> camera {
@@ -174,8 +172,8 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
     auto b_point_list_keys_data = torch::empty({ n_render_gaussians }, torch::TensorOptions().dtype(torch::kInt64).device(torch::kCUDA));
     auto b_point_list_keys = whack::make_tensor_view<uint64_t>(b_point_list_keys_data, n_render_gaussians);
 
-    auto b_point_list_data = torch::empty({ n_render_gaussians }, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
-    auto b_point_list = whack::make_tensor_view<uint32_t>(b_point_list_data, n_render_gaussians);
+    cache.b_point_list = torch::empty({ n_render_gaussians }, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
+    auto b_point_list = whack::make_tensor_view<uint32_t>(cache.b_point_list, n_render_gaussians);
     {
         auto b_point_list_keys_unsorted_data = torch::empty({ n_render_gaussians }, torch::TensorOptions().dtype(torch::kInt64).device(torch::kCUDA));
         auto b_point_list_keys_unsorted = whack::make_tensor_view<uint64_t>(b_point_list_keys_unsorted_data, n_render_gaussians);
@@ -225,7 +223,7 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
             nullptr,
             temp_storage_bytes,
             raw_pointer<uint64_t>(b_point_list_keys_unsorted_data), raw_pointer<uint64_t>(b_point_list_keys_data),
-            raw_pointer<uint32_t>(b_point_list_unsorted_data), raw_pointer<uint32_t>(b_point_list_data),
+            raw_pointer<uint32_t>(b_point_list_unsorted_data), raw_pointer<uint32_t>(cache.b_point_list),
             n_render_gaussians, 0, 32 + bit);
 
         auto temp_storage = torch::empty(temp_storage_bytes, torch::TensorOptions().dtype(torch::kChar).device(torch::kCUDA));
@@ -233,15 +231,14 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
             raw_pointer<void>(temp_storage),
             temp_storage_bytes,
             raw_pointer<uint64_t>(b_point_list_keys_unsorted_data), raw_pointer<uint64_t>(b_point_list_keys_data),
-            raw_pointer<uint32_t>(b_point_list_unsorted_data), raw_pointer<uint32_t>(b_point_list_data),
+            raw_pointer<uint32_t>(b_point_list_unsorted_data), raw_pointer<uint32_t>(cache.b_point_list),
             n_render_gaussians, 0, 32 + bit);
         CHECK_CUDA(data.debug);
     }
 
-    auto i_ranges_data = whack::make_tensor<glm::uvec2>(whack::Location::Device, render_grid_dim.y * render_grid_dim.x);
+    cache.i_ranges = torch::zeros({ render_grid_dim.y * render_grid_dim.x, 2 }, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
     {
-        auto i_ranges = i_ranges_data.view();
-        thrust::fill(i_ranges_data.device_vector().begin(), i_ranges_data.device_vector().end(), glm::uvec2(0));
+        auto i_ranges = whack::make_tensor_view<glm::uvec2>(cache.i_ranges, render_grid_dim.y * render_grid_dim.x);
 
         whack::start_parallel( // identifyTileRanges
             whack::Location::Device, whack::grid_dim_from_total_size(n_render_gaussians, 256), 256, WHACK_KERNEL(=) {
@@ -275,8 +272,7 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
         // and rasterizing data.
 
         const auto inversed_projectin_matrix = glm::inverse(data.proj_matrix);
-
-        auto i_ranges = whack::make_tensor_view(i_ranges_data.device_vector(), render_grid_dim.y, render_grid_dim.x);
+        auto i_ranges = whack::make_tensor_view<glm::uvec2>(cache.i_ranges, render_grid_dim.y, render_grid_dim.x);
         whack::start_parallel(
             whack::Location::Device, render_grid_dim, render_block_dim, WHACK_DEVICE_KERNEL(=) {
                 WHACK_UNUSED(whack_gridDim);
@@ -314,7 +310,7 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
                 float distance_marched_tmp = 0;
 
                 while (large_stepping_ongoing) {
-                    // Iterate over all gaussians and take the first config::n_large_steps larger than current_large_step_start
+                    // Iterate over all gaussians and compute sample_sections
                     marching_steps::DensityArray<config::n_large_steps> sample_sections(current_large_step_start);
                     n_toDo = render_g_range.y - render_g_range.x;
                     bool done_1 = !inside;
@@ -365,14 +361,14 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
                         }
                     }
 
-                    // iterate again, compute sampling and blend
+                    // compute sampling
                     const auto bin_borders = marching_steps::sample<config::n_small_steps>(sample_sections);
                     whack::Array<glm::vec4, config::n_small_steps> bin_eval = {};
 
                     float dbg_mass_in_bins_closeed = 0;
                     float dbg_mass_in_bins_numerik_1 = 0;
 
-                    // Iterate over batches until all done or range is complete: rasterise into bins
+                    // Iterate over batches again, and compute samples
                     n_toDo = render_g_range.y - render_g_range.x;
                     for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {
                         // End if entire block votes that it is done rasterizing
@@ -435,17 +431,10 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
                         }
                     }
 
+                    // blend
                     switch (data.debug_render_mode) {
                     case vol_marcher::ForwardData::RenderMode::Full: {
-                        // quadrature rule for bins
-                        // for (auto k = 0u; k < bin_eval.size(); ++k) {
-                        //     const auto eval_t = bin_eval[k];
-                        //     current_colour += glm::vec<3, float>(eval_t) * current_transparency;
-                        //     current_transparency *= stroke::exp(-eval_t.w);
-                        // }
                         cuda::std::tie(current_colour, current_transparency) = math::integrate_bins(current_colour, current_transparency, bin_eval);
-
-                        // distance_marched_tmp = stroke::max(sample_sections.end(), distance_marched_tmp);
                         break;
                     }
                     case vol_marcher::ForwardData::RenderMode::Bins: {
@@ -500,7 +489,6 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
                 data.framebuffer(1, pix.y, pix.x) = final_colour.y;
                 data.framebuffer(2, pix.y, pix.x) = final_colour.z;
                 remaining_transparency(pix.y, pix.x) = current_transparency;
-                distance_marched(pix.y, pix.x) = distance_marched_tmp;
             });
     }
     return {};
