@@ -40,6 +40,6 @@ struct ForwardCache {
     torch::Tensor remaining_transparency;
 };
 
-ForwardCache forward(vol_marcher::ForwardData& forward_data);
+ForwardCache forward(whack::TensorView<float, 3> framebuffer, vol_marcher::ForwardData& forward_data);
 
 } // namespace dgmr::vol_marcher

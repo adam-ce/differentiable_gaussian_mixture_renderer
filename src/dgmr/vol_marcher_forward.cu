@@ -38,10 +38,10 @@ namespace gaussian = stroke::gaussian;
 
 } // namespace
 
-dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardData& data)
+dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<float, 3> framebuffer, vol_marcher::ForwardData& data)
 {
-    const auto fb_width = data.framebuffer.size<2>();
-    const auto fb_height = data.framebuffer.size<1>();
+    const auto fb_width = framebuffer.size<2>();
+    const auto fb_height = framebuffer.size<1>();
     const auto n_gaussians = data.gm_weights.size<0>();
     const float focal_y = fb_height / (2.0f * data.tan_fovy);
     const float focal_x = fb_width / (2.0f * data.tan_fovx);
@@ -51,7 +51,7 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
     constexpr auto render_block_size = render_block_width * render_block_height;
     constexpr auto render_n_warps = render_block_size / 32;
     static_assert(render_n_warps * 32 == render_block_size);
-    const dim3 render_grid_dim = whack::grid_dim_from_total_size({ data.framebuffer.size<2>(), data.framebuffer.size<1>() }, render_block_dim);
+    const dim3 render_grid_dim = whack::grid_dim_from_total_size({ fb_width, fb_height }, render_block_dim);
 
     // geometry buffers, filled by the preprocess pass
     dgmr::vol_marcher::ForwardCache cache;
@@ -456,9 +456,9 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(vol_marcher::ForwardD
                     return;
                 // All threads that treat valid pixel write out their final
                 const auto final_colour = current_colour + current_transparency * data.background;
-                data.framebuffer(0, pix.y, pix.x) = final_colour.x;
-                data.framebuffer(1, pix.y, pix.x) = final_colour.y;
-                data.framebuffer(2, pix.y, pix.x) = final_colour.z;
+                framebuffer(0, pix.y, pix.x) = final_colour.x;
+                framebuffer(1, pix.y, pix.x) = final_colour.y;
+                framebuffer(2, pix.y, pix.x) = final_colour.z;
                 remaining_transparency(pix.y, pix.x) = current_transparency;
             });
     }

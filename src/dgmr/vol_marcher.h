@@ -31,7 +31,6 @@ struct ForwardData {
     whack::TensorView<const glm::vec3, 1> gm_cov_scales;
     whack::TensorView<const glm::quat, 1> gm_cov_rotations;
 
-    whack::TensorView<float, 3> framebuffer;
     glm::mat4 view_matrix = glm::mat4(0);
     glm::mat4 proj_matrix = glm::mat4(0);
     glm::vec3 cam_poition = glm::vec3(0);

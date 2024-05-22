@@ -5,6 +5,7 @@
 #include <glm/gtx/quaternion.hpp>
 #include <torch/extension.h>
 #include <vector>
+#include <chrono>
 
 #include "../src/dgmr/vol_marcher_forward.h"
 #include "../src/dgmr/vol_marcher_backward.h"
@@ -76,15 +77,16 @@ std::vector<torch::Tensor> vol_marcher_forward(
 
     const auto n_gaussians = weights.size(0);
 
+    auto framebuffer_view = whack::make_tensor_view<float>(framebuffer, 3, render_height, render_width);
+
     dgmr::vol_marcher::ForwardData data;
     data.gm_centroids = whack::make_tensor_view<const glm::vec3>(centroids, n_gaussians);
     // python may send only the DC term.
-    const auto sh_params_extended = torch::cat({ sh_params, torch::ones({ n_gaussians, 16 - sh_params.size(1), 3 }, cuda_floa_type) }, 1);
+    const auto sh_params_extended = torch::cat({ sh_params, torch::zeros({ n_gaussians, 16 - sh_params.size(1), 3 }, cuda_floa_type) }, 1);
     data.gm_sh_params = whack::make_tensor_view<const dgmr::SHs<3>>(sh_params_extended, n_gaussians);
     data.gm_weights = whack::make_tensor_view<const float>(weights, n_gaussians);
     data.gm_cov_scales = whack::make_tensor_view<const glm::vec3>(cov_scales, n_gaussians);
     data.gm_cov_rotations = whack::make_tensor_view<const glm::quat>(cov_rotations, n_gaussians);
-    data.framebuffer = whack::make_tensor_view<float>(framebuffer, 3, render_height, render_width);
     data.view_matrix = to_mat4(view_matrix);
     data.proj_matrix = to_mat4(proj_matrix);
     data.cam_poition = to_vec3(cam_position);
@@ -93,7 +95,10 @@ std::vector<torch::Tensor> vol_marcher_forward(
     data.tan_fovx = tan_fovx;
     data.tan_fovy = tan_fovy;
 
-    const auto cache = dgmr::vol_marcher::forward(data);
+    // const auto start = std::chrono::system_clock::now();
+    const auto cache = dgmr::vol_marcher::forward(framebuffer_view, data);
+    // const auto end = std::chrono::system_clock::now();
+    // std::cout << "forward took: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << "ms" << std::endl;
     return { framebuffer,
         cache.rects,
         cache.rgb,
@@ -128,6 +133,8 @@ std::vector<torch::Tensor> vol_marcher_backward(
     const torch::Tensor& grad_framebuffer,
     const std::vector<torch::Tensor>& cache_vector)
 {
+    using namespace torch::indexing;
+
     at::cuda::OptionalCUDAGuard device_guard;
     assert(device_of(sh_params) == device_of(weights));
     assert(device_of(sh_params) == device_of(centroids));
@@ -171,6 +178,7 @@ std::vector<torch::Tensor> vol_marcher_backward(
     data.tan_fovx = tan_fovx;
     data.tan_fovy = tan_fovy;
 
+    const auto framebuffer = whack::make_tensor_view<const float>(cache_vector.at(0), 3, grad_framebuffer.size(1), grad_framebuffer.size(2));
     dgmr::vol_marcher::ForwardCache cache;
     cache.rects = cache_vector.at(1);
     cache.rgb = cache_vector.at(2);
@@ -185,8 +193,12 @@ std::vector<torch::Tensor> vol_marcher_backward(
     cache.b_point_list = cache_vector.at(11);
     cache.remaining_transparency = cache_vector.at(12);
 
-    const dgmr::vol_marcher::Gradients retval = dgmr::vol_marcher::backward(data, cache, grad_framebuffer);
+    // const auto start = std::chrono::system_clock::now();
+    dgmr::vol_marcher::Gradients retval = dgmr::vol_marcher::backward(framebuffer, data, cache, grad_framebuffer);
+    // const auto end = std::chrono::system_clock::now();
+    // std::cout << "backward took: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count() << "ms" << std::endl;
 
+    retval.gm_sh_params = retval.gm_sh_params.reshape({ n_gaussians, 16, 3 }).index({ Slice(), Slice(0, sh_params.size(1)), Slice() });
     return { retval.gm_sh_params, retval.gm_weights, retval.gm_centroids, retval.gm_cov_scales, retval.gm_cov_rotations };
 }
 

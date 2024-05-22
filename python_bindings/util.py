@@ -74,14 +74,14 @@ profiler_sync_extra = ""
 # if gmc.config.enable_profiler_synchronisation:
 #     profiler_sync_extra = "-DGPE_PROFILER_BUILD"
 
-cuda_extra_cuda_cflags = ["-O3",  "--use_fast_math", "--expt-extended-lambda", "-std=c++20", " -DGLM_FORCE_LEFT_HANDED -DGLM_FORCE_QUAT_DATA_WXYZ --expt-relaxed-constexpr",  profiler_sync_extra]  # , "-DNDEBUG"
+cuda_extra_cuda_cflags = ["-O3",  "--use_fast_math", "--expt-extended-lambda", "-std=c++20", " -DNDEBUG -DGLM_FORCE_LEFT_HANDED -DGLM_FORCE_QUAT_DATA_WXYZ --expt-relaxed-constexpr",  profiler_sync_extra]  # 
 if platform.system() == "Windows":
     cuda_extra_cflags = ["/openmp", "/O2", "/fp:fast", "/DNDEBUG"]
     cpp_extra_cflags = ["/openmp", "/O2", "/fp:fast", "/std:c++20", "/DNDEBUG"]
     cuda_extra_cuda_cflags.append("-Xcompiler=/openmp,/O2,/fp:fast,/DGPE_NO_CUDA_ERROR_CHECKING")
 else:
     # cuda_extra_cflags = ["-O3", "-ffast-math", "-march=native", "--expt-extended-lambda --expt-relaxed-constexpr", "-std=c++20", "-DNDEBUG", profiler_sync_extra]
-    cuda_extra_cflags = ["-O3 -ffast-math -march=native --expt-extended-lambda --expt-relaxed-constexpr -std=c++20 -DGLM_FORCE_XYZW_ONLY -DGLM_ENABLE_EXPERIMENTAL", profiler_sync_extra]
-    cpp_extra_cflags = ["-fopenmp", "-ffast-math", " -fno-finite-math-only", "-O4", "-march=native", "--std=c++20", "-DGLM_FORCE_XYZW_ONLY -DGLM_ENABLE_EXPERIMENTAL", profiler_sync_extra]  # , "-DNDEBUG", "-DGPE_NO_CUDA_ERROR_CHECKING"
-    cuda_extra_cuda_cflags.append(f"-Xcompiler -fopenmp {profiler_sync_extra} -DGLM_FORCE_XYZW_ONLY -DGLM_ENABLE_EXPERIMENTAL")  #  -DNDEBUG"
+    cuda_extra_cflags = ["-O3 -ffast-math -march=native --expt-extended-lambda --expt-relaxed-constexpr -std=c++20 -DNDEBUG -DGLM_FORCE_XYZW_ONLY -DGLM_ENABLE_EXPERIMENTAL", profiler_sync_extra]
+    cpp_extra_cflags = ["-fopenmp", "-ffast-math", " -fno-finite-math-only", "-O4", "-march=native", "--std=c++20", " -DNDEBUG -DGLM_FORCE_XYZW_ONLY -DGLM_ENABLE_EXPERIMENTAL", profiler_sync_extra]  # , "-DNDEBUG", "-DGPE_NO_CUDA_ERROR_CHECKING"
+    cuda_extra_cuda_cflags.append(f"-Xcompiler -fopenmp {profiler_sync_extra} -DNDEBUG -DGLM_FORCE_XYZW_ONLY -DGLM_ENABLE_EXPERIMENTAL")  #  -DNDEBUG"
 

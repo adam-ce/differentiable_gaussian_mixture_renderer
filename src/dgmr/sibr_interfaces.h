@@ -23,6 +23,6 @@
 
 namespace dgmr::sibr_interfaces {
 void splat(SplatForwardData& forward_data);
-void vol_march(vol_marcher::ForwardData& forward_data);
+void vol_march(whack::TensorView<float, 3> framebuffer, vol_marcher::ForwardData& forward_data);
 
 } // namespace dgmr::sibr_interfaces

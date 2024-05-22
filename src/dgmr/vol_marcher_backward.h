@@ -33,6 +33,6 @@ struct Gradients {
     torch::Tensor gm_cov_rotations;
 };
 
-Gradients backward(const ForwardData& forward_data, const ForwardCache& forward_cache, const torch::Tensor& grad);
+Gradients backward(const whack::TensorView<const float, 3>& framebuffer, const ForwardData& forward_data, const ForwardCache& forward_cache, const torch::Tensor& grad);
 
 } // namespace dgmr::vol_marcher
