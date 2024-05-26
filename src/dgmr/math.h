@@ -426,7 +426,7 @@ sample_gaussian(const scalar_t mass, const glm::vec<3, scalar_t>& rgb, const glm
 
     if (stroke::isnan(gaussian1d.centre))
         return;
-    if (mass_on_ray < 1.1f / 255.f || mass_on_ray > 1'000)
+    if (mass_on_ray < 1.0f / 255.f || mass_on_ray > 1'000)
         return;
     if (variance <= 0 || stroke::isnan(variance) || stroke::isnan(mass_on_ray) || mass_on_ray > 100'000)
         return; // todo: shouldn't happen any more after implementing AA?
