@@ -17,6 +17,10 @@
  *****************************************************************************/
 
 #include "sibr_interfaces.h"
+
+// #include <chrono>
+
+// #include "vol_marcher_backward.h"
 #include "vol_marcher_forward.h"
 
 void dgmr::sibr_interfaces::splat(SplatForwardData& forward_data)
@@ -24,7 +28,17 @@ void dgmr::sibr_interfaces::splat(SplatForwardData& forward_data)
     dgmr::splat_forward(forward_data);
 }
 
-void dgmr::sibr_interfaces::vol_march(vol_marcher::ForwardData& forward_data)
+void dgmr::sibr_interfaces::vol_march(whack::TensorView<float, 3> framebuffer, vol_marcher::ForwardData& forward_data)
 {
-    dgmr::vol_marcher::forward(forward_data);
+
+    // const auto start_f = std::chrono::system_clock::now();
+    const auto cache = dgmr::vol_marcher::forward(framebuffer, forward_data);
+    // const auto end_f = std::chrono::system_clock::now();
+    // std::cout << "forward took: " << std::chrono::duration_cast<std::chrono::milliseconds>(end_f - start_f).count() << "ms" << std::endl;
+
+    // const auto start_b = std::chrono::system_clock::now();
+    // const auto gradients = dgmr::vol_marcher::backward(framebuffer, forward_data, cache, torch::ones({ 3, framebuffer.size(1), framebuffer.size(2) }).cuda());
+    // const auto end_b = std::chrono::system_clock::now();
+    // std::cout << "backward took: " << std::chrono::duration_cast<std::chrono::milliseconds>(end_b - start_b).count() << "ms" << std::endl;
+    // std::cout << "forward + backward took: " << std::chrono::duration_cast<std::chrono::milliseconds>(end_b - start_f).count() << "ms" << std::endl;
 }
