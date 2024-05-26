@@ -51,7 +51,7 @@ repos = [
 source_dir = os.path.dirname(__file__)
 print(f"util.py: source_dir={source_dir}")
 
-if False:
+if True:
     # this function is not good, but good enough for now.
     # if you have any problems, try deleting all files in ./extern
     clone_and_checkout_repos(repos, target_dir=f"{source_dir}/extern")
