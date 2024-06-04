@@ -530,16 +530,19 @@ integrate_bins(glm::vec<3, scalar_t> current_colour, scalar_t current_transparen
     for (auto k = 0u; k < bins.size(); ++k) {
         const auto eval_t = bins[k];
         const auto transparency_k = stroke::exp(-eval_t.w);
+        const auto one_over_transparency_k = std::min(scalar_t(255), 1 / transparency_k);
         grad_bins[k].x += current_transparency * grad_colour.x;
         grad_bins[k].y += current_transparency * grad_colour.y;
         grad_bins[k].z += current_transparency * grad_colour.z;
 
         const auto c_delta = current_colour - vec3(eval_t);
-        current_colour = (c_delta) / transparency_k;
+        current_colour = c_delta * one_over_transparency_k;
 
-        const auto grad_transparency_k = (final_transparency / transparency_k) * grad_transparency + dot(grad_colour, current_colour) * current_transparency;
-        grad_bins[k].w -= grad_transparency_k * stroke::exp(-eval_t.w);
+        const auto grad_transparency_k = final_transparency * one_over_transparency_k * grad_transparency + dot(grad_colour, current_colour) * current_transparency;
+        grad_bins[k].w -= grad_transparency_k * transparency_k;
         current_transparency *= transparency_k;
+        if (current_transparency < scalar_t(1. / 255.))
+            break;
     }
     return { current_colour, current_transparency, grad_bins };
 }
@@ -562,7 +565,7 @@ sample_gaussian(const scalar_t mass, const glm::vec<3, scalar_t>& rgb, const glm
         return {};
     if (mass_on_ray < 1.0f / 255.f || mass_on_ray > 1'000)
         return {};
-    if (variance <= 0 || stroke::isnan(variance) || stroke::isnan(mass_on_ray) || mass_on_ray > 100'000)
+    if (sd <= scalar_t(0.0001) || stroke::isnan(sd) || stroke::isnan(mass_on_ray) || mass_on_ray > 100'000)
         return {}; // todo: shouldn't happen any more after implementing AA?
 
     const auto mass_in_bins = mass_on_ray * gaussian::integrate_normalised_inv_SD(centroid, inv_sd, { bin_borders[0], bin_borders[bin_borders.size() - 1] });

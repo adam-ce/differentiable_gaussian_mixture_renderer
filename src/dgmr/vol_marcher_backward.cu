@@ -215,9 +215,6 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const whack::TensorView
                     const auto bin_borders = marching_steps::sample<config::n_small_steps>(sample_sections);
                     whack::Array<glm::vec4, config::n_small_steps - 1> bin_eval = {};
 
-                    float dbg_mass_in_bins_closeed = 0;
-                    float dbg_mass_in_bins_numerik_1 = 0;
-
                     // Iterate over batches again, and compute samples
                     n_toDo = render_g_range.y - render_g_range.x;
                     for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {

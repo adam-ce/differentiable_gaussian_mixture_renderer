@@ -407,6 +407,8 @@ integrate_bins(glm::vec<3, scalar_t> current_colour, scalar_t current_transparen
         const auto eval_t = bins[k];
         current_colour += glm::vec<3, scalar_t>(eval_t) * current_transparency;
         current_transparency *= stroke::exp(-eval_t.w);
+        if (current_transparency < scalar_t(1. / 255.))
+            break;
     }
     return cuda::std::make_tuple(current_colour, current_transparency);
 }
@@ -428,7 +430,7 @@ sample_gaussian(const scalar_t mass, const glm::vec<3, scalar_t>& rgb, const glm
         return;
     if (mass_on_ray < 1.0f / 255.f || mass_on_ray > 1'000)
         return;
-    if (variance <= 0 || stroke::isnan(variance) || stroke::isnan(mass_on_ray) || mass_on_ray > 100'000)
+    if (sd <= scalar_t(0.0001) || stroke::isnan(sd) || stroke::isnan(mass_on_ray) || mass_on_ray > 100'000)
         return; // todo: shouldn't happen any more after implementing AA?
 
     const auto mass_in_bins = mass_on_ray * gaussian::integrate_normalised_inv_SD(centroid, inv_sd, { bin_borders[0], bin_borders[bin_borders.size() - 1] });

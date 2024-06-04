@@ -639,6 +639,56 @@ TEST_CASE("dgmr integrate_bins gradient 2 bin array 2 bins")
     }
 }
 
+TEST_CASE("dgmr integrate_bins gradient 2 bin array 256 bins")
+{
+    using scalar_t = double;
+    using Arr = whack::Array<glm::dvec4, 256>;
+
+    whack::random::HostGenerator<scalar_t> rnd;
+
+    const auto fun = [](const whack::Tensor<scalar_t, 1>& input) {
+        const auto [bins0, bins1] = stroke::extract<Arr, Arr>(input);
+        const auto [color0, transparency0] = dgmr::math::integrate_bins(glm::dvec3(0), 1., bins0);
+        const auto [color1, transparency1] = dgmr::math::integrate_bins(color0, transparency0, bins1);
+        return stroke::pack_tensor<scalar_t>(color1, transparency1);
+    };
+
+    const auto fun_grad = [](const whack::Tensor<scalar_t, 1>& input, const whack::Tensor<scalar_t, 1>& grad_output) {
+        const auto [bins0, bins1] = stroke::extract<Arr, Arr>(input);
+        const auto [color0, transparency0] = dgmr::math::integrate_bins(glm::dvec3(0), 1., bins0);
+        const auto [color1, transparency1] = dgmr::math::integrate_bins(color0, transparency0, bins1);
+
+        const auto [incoming_grad_colour, incoming_grad_transparency] = stroke::extract<glm::dvec3, scalar_t>(grad_output);
+
+        const auto [remaining_color0, remaining_transparency0, grad_bins0] = dgmr::math::grad::integrate_bins(color1, 1.0, transparency1, bins0, incoming_grad_colour, incoming_grad_transparency);
+
+        const auto [remaining_color1, remaining_transparency1, grad_bins1] = dgmr::math::grad::integrate_bins(remaining_color0, remaining_transparency0, transparency1, bins1, incoming_grad_colour, incoming_grad_transparency);
+        return stroke::pack_tensor<scalar_t>(grad_bins0, grad_bins1);
+    };
+
+    for (int i = 0; i < 10; ++i) {
+
+        const auto a0 = [&]() -> Arr {
+            Arr a;
+            for (auto& v : a) {
+                const auto rnd0 = rnd.uniform() / 32.;
+                v = glm::dvec4(rnd.uniform() * rnd0, rnd.uniform() * rnd0, rnd.uniform() * rnd0, rnd0);
+            }
+            return a;
+        }();
+        const auto a1 = [&]() -> Arr {
+            Arr a;
+            for (auto& v : a) {
+                const auto rnd0 = rnd.uniform() / 32.;
+                v = glm::dvec4(rnd.uniform() * rnd0, rnd.uniform() * rnd0, rnd.uniform() * rnd0, rnd0);
+            }
+            return a;
+        }();
+        const auto test_data = stroke::pack_tensor<scalar_t>(a0, a1);
+        stroke::check_gradient(fun, fun_grad, test_data, scalar_t(0.000001));
+    }
+}
+
 TEST_CASE("dgmr sample_gaussian grad")
 {
     using scalar_t = double;
