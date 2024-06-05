@@ -127,7 +127,7 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<flo
 
                 // using the more aggressive computation for calculating overlapping tiles:
                 {
-                    const glm::uvec2 my_rect = { (int)ceil(3.f * sqrt(screen_space_gaussian.cov[0])), (int)ceil(3.f * sqrt(screen_space_gaussian.cov[2])) };
+                    const glm::uvec2 my_rect = { (int)ceil(6.f * sqrt(screen_space_gaussian.cov[0])), (int)ceil(6.f * sqrt(screen_space_gaussian.cov[2])) };
                     g_rects(idx) = my_rect;
                     glm::uvec2 rect_min, rect_max;
                     util::getRect(screen_space_gaussian.centroid, my_rect, &rect_min, &rect_max, render_grid_dim);
