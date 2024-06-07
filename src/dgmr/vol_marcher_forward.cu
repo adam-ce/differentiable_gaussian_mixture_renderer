@@ -127,7 +127,19 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<flo
 
                 // using the more aggressive computation for calculating overlapping tiles:
                 {
-                    const glm::uvec2 my_rect = { (int)ceil(6.f * sqrt(screen_space_gaussian.cov[0])), (int)ceil(6.f * sqrt(screen_space_gaussian.cov[2])) };
+                    // get exact distance to 1./255. isoline
+                    const auto isoline_distance = [](float w, float variance, float isoline) {
+                        // solve w * gaussian(x, sd) == isoline for x
+                        const auto s = -2 * stroke::log(isoline / w);
+                        if (s <= 0)
+                            return 0.f;
+                        return stroke::sqrt(s * variance);
+                    };
+                    // const glm::uvec2 my_rect = { (int)ceil(3.f * sqrt(screen_space_gaussian.cov[0])), (int)ceil(3.f * sqrt(screen_space_gaussian.cov[2])) };
+                    const glm::uvec2 my_rect = {
+                        int(ceil(isoline_distance(screen_space_gaussian.weight, screen_space_gaussian.cov[0], 1.f / 255.f))),
+                        int(ceil(isoline_distance(screen_space_gaussian.weight, screen_space_gaussian.cov[2], 1.f / 255.f))),
+                    };
                     g_rects(idx) = my_rect;
                     glm::uvec2 rect_min, rect_max;
                     util::getRect(screen_space_gaussian.centroid, my_rect, &rect_min, &rect_max, render_grid_dim);
