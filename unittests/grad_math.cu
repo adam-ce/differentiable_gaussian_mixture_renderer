@@ -381,6 +381,42 @@ void check_smaller2()
     }
 }
 
+template <unsigned sh_degree>
+void check_sh_to_color()
+{
+    using scalar_t = float; // sh don't support double atm
+    using vec3_t = glm::vec<3, scalar_t>;
+
+    whack::random::HostGenerator<scalar_t> rnd;
+    const auto gen_harmonic = [&]() {
+        dgmr::SHs<3> retval = {};
+        for (auto i = 0u; i < retval.size(); ++i) {
+            retval[i] = rnd.normal3();
+        }
+        return retval;
+    };
+
+    for (int i = 0; i < 10; ++i) {
+        const auto fun = [&](const whack::Tensor<scalar_t, 1>& input) {
+            const auto [sh, dir] = stroke::extract<dgmr::SHs<3>, vec3_t>(input);
+            const auto [rgb, clamped] = dgmr::math::sh_to_colour(sh, sh_degree, dir);
+            return stroke::pack_tensor<scalar_t>(rgb);
+        };
+
+        const auto fun_grad = [&](const whack::Tensor<scalar_t, 1>& input, const whack::Tensor<scalar_t, 1>& grad_output) {
+            const auto [sh, dir] = stroke::extract<dgmr::SHs<3>, vec3_t>(input);
+            const auto [rgb, clamped] = dgmr::math::sh_to_colour(sh, sh_degree, dir);
+
+            const auto grad_incoming = stroke::extract<vec3_t>(grad_output);
+            const auto grad_outgoing = dgmr::math::grad::sh_to_colour(sh, sh_degree, dir, grad_incoming, clamped);
+            return stroke::pack_tensor<scalar_t>(grad_outgoing);
+        };
+
+        const auto test_data = stroke::pack_tensor<scalar_t>(gen_harmonic(), normalize(rnd.normal3()));
+        stroke::check_gradient(fun, fun_grad, test_data, scalar_t(0.001));
+    }
+}
+
 } // namespace
 
 TEST_CASE("dgmr splat gradient (formulation: Opacity, filter kernel size: 0)")
@@ -739,37 +775,22 @@ TEST_CASE("dgmr sample_gaussian grad")
     }
 }
 
+TEST_CASE("dgmr spherical harmonics grad degree 0")
+{
+    check_sh_to_color<1>();
+}
+
 TEST_CASE("dgmr spherical harmonics grad degree 1")
 {
-    using scalar_t = float; // sh don't support double atm
-    using vec3_t = glm::vec<3, scalar_t>;
+    check_sh_to_color<1>();
+}
 
-    whack::random::HostGenerator<scalar_t> rnd;
-    const auto gen_harmonic = [&]() {
-        dgmr::SHs<3> retval = {};
-        for (auto i = 0u; i < retval.size(); ++i) {
-            retval[i] = rnd.normal3();
-        }
-        return retval;
-    };
+TEST_CASE("dgmr spherical harmonics grad degree 2")
+{
+    check_sh_to_color<1>();
+}
 
-    for (int i = 0; i < 10; ++i) {
-        const auto fun = [&](const whack::Tensor<scalar_t, 1>& input) {
-            const auto [sh, dir] = stroke::extract<dgmr::SHs<3>, vec3_t>(input);
-            const auto [rgb, clamped] = dgmr::math::sh_to_colour(sh, 1, dir);
-            return stroke::pack_tensor<scalar_t>(rgb);
-        };
-
-        const auto fun_grad = [&](const whack::Tensor<scalar_t, 1>& input, const whack::Tensor<scalar_t, 1>& grad_output) {
-            const auto [sh, dir] = stroke::extract<dgmr::SHs<3>, vec3_t>(input);
-            const auto [rgb, clamped] = dgmr::math::sh_to_colour(sh, 1, dir);
-
-            const auto grad_incoming = stroke::extract<vec3_t>(grad_output);
-            const auto grad_outgoing = dgmr::math::grad::sh_to_colour(sh, 1, dir, grad_incoming, clamped);
-            return stroke::pack_tensor<scalar_t>(grad_outgoing);
-        };
-
-        const auto test_data = stroke::pack_tensor<scalar_t>(gen_harmonic(), normalize(rnd.normal3()));
-        stroke::check_gradient(fun, fun_grad, test_data, scalar_t(0.001));
-    }
+TEST_CASE("dgmr spherical harmonics grad degree 3")
+{
+    check_sh_to_color<1>();
 }
