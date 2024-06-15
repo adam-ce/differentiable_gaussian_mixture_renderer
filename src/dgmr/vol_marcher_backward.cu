@@ -244,11 +244,11 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const whack::TensorView
                         }
                     }
 
-                    // blend //todo gradient backwards
+                    // gradient for blend
                     whack::Array<glm::vec4, config::n_small_steps - 1> grad_bin_eval;
                     cuda::std::tie(current_colour, current_transparency, grad_bin_eval) = math::grad::integrate_bins(current_colour, current_transparency, final_transparency, bin_eval, grad_current_colour, grad_current_transparency);
 
-                    // todo gradient for compute samples and write back to individual gaussians
+                    // gradient for compute samples and write back to individual gaussians
                     n_toDo = render_g_range.y - render_g_range.x;
                     for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {
                         // End if entire block votes that it is done rasterizing

@@ -528,18 +528,19 @@ integrate_bins(glm::vec<3, scalar_t> current_colour, scalar_t current_transparen
     using vec3 = glm::vec<3, scalar_t>;
     whack::Array<glm::vec<4, scalar_t>, N> grad_bins = {};
     for (auto k = 0u; k < bins.size(); ++k) {
-        const auto eval_t = bins[k];
-        const auto transparency_k = stroke::exp(-eval_t.w);
-        const auto one_over_transparency_k = std::min(scalar_t(255), 1 / transparency_k);
         grad_bins[k].x += current_transparency * grad_colour.x;
         grad_bins[k].y += current_transparency * grad_colour.y;
         grad_bins[k].z += current_transparency * grad_colour.z;
 
+        const auto eval_t = bins[k];
+        const auto transparency_k = stroke::exp(-eval_t.w);
+        const auto one_over_transparency_k = std::min(scalar_t(255), 1 / transparency_k);
         const auto c_delta = current_colour - vec3(eval_t);
         current_colour = c_delta * one_over_transparency_k;
 
         const auto grad_transparency_k = final_transparency * one_over_transparency_k * grad_transparency + dot(grad_colour, current_colour) * current_transparency;
         grad_bins[k].w -= grad_transparency_k * transparency_k;
+
         current_transparency *= transparency_k;
         if (current_transparency < scalar_t(1. / 255.))
             break;
