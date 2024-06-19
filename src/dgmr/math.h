@@ -405,8 +405,12 @@ integrate_bins(glm::vec<3, scalar_t> current_colour, scalar_t current_transparen
 {
     for (auto k = 0u; k < bins.size(); ++k) {
         const auto eval_t = bins[k];
-        current_colour += glm::vec<3, scalar_t>(eval_t) * current_transparency;
-        current_transparency *= stroke::exp(-eval_t.w);
+        const auto transparency_k = stroke::exp(-eval_t.w);
+        const auto effective_colour = glm::vec<3, scalar_t>(eval_t);
+
+        current_colour += effective_colour * current_transparency;
+
+        current_transparency *= transparency_k;
         if (current_transparency < scalar_t(1. / 255.))
             break;
     }
