@@ -16,16 +16,17 @@ x = torch.linspace(-10, 10, 400)
 
 # Define the beta values
 beta_values = [1, 2, 3, 4, 5]
-beta_values = [1, 2, 3, 5]
+beta_values = [1, 2, 5, 10]
 
 # Create the plot
-plt.figure(figsize=(10, 6))
+plt.figure(figsize=(2, 3))
 
 # Plot the softplus function for each beta value
 for beta in beta_values:
-    y = torch.exp(-fun.softplus(x, 10.0)*beta)
+    y = torch.exp(-fun.softplus(x, beta))
+    plt.plot(x.numpy(), y.numpy(), label=f'exp(-Softplus(x, beta={beta}))')
     # y = fun.softplus(x, beta)
-    plt.plot(x.numpy(), y.numpy(), label=f'exp(-Softplus(x, beta={10.0}) * {beta})')
+    # plt.plot(x.numpy(), y.numpy(), label=f'Softplus(x, beta={beta})')
     #y = inverse_softplus(x, beta)
     #plt.plot(x.numpy(), y.numpy(), label=f'der beta={beta}')
 
@@ -34,7 +35,7 @@ plt.plot(x.numpy(), y.numpy(), label=f'1 - sigmoid(x)')
 # Add title and labels
 plt.title('Different activation functions')
 plt.xlabel('Input')
-plt.ylabel('Output')
+plt.ylabel('Transparency')
 plt.legend()
 plt.grid(True)
 
