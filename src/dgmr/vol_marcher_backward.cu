@@ -324,8 +324,8 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const whack::TensorView
                 if (g_tiles_touched(idx) == 0)
                     return;
 
-                const auto centroid = data.gm_centroids(idx); // #######
-                if ((data.view_matrix * Vec4(centroid, 1.f)).z < 0.2) // adam doesn't understand, why projection matrix > 0 isn't enough.
+                const auto centroid = data.gm_centroids(idx);
+                if ((data.view_matrix * Vec4(centroid, 1.f)).z < 0.2)
                     return;
 
                 const auto weight = data.gm_weights(idx);

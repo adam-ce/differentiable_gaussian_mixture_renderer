@@ -267,7 +267,7 @@ STROKE_DEVICES_INLINE cuda::std::tuple<glm::vec<3, scalar_t>, glm::bvec3> sh_to_
     }
     result += scalar_t(0.5);
 
-    return { glm::max(result, scalar_t(0)), glm::greaterThan(result, glm::vec<3, scalar_t>(0)) };
+    return { glm::max(result, scalar_t(0)), glm::greaterThanEqual(result, glm::vec<3, scalar_t>(0)) };
 }
 
 template <Formulation formulation, typename scalar_t>

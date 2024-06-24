@@ -391,7 +391,12 @@ void check_sh_to_color()
     const auto gen_harmonic = [&]() {
         dgmr::SHs<3, scalar_t> retval = {};
         for (auto i = 0u; i < retval.size(); ++i) {
-            retval[i] = rnd.normal3();
+            // if (is_special_first) { // not differentiable iff the sh gives exactly 0. no need to test. leaving comment for future reference.
+            //     retval[i] = vec3_t(-.5 / 0.28209479177387814);
+            //     is_special_first = false;
+            //     continue;
+            // }
+            retval[i] = rnd.normal3() * 10.;
         }
         return retval;
     };
@@ -777,7 +782,7 @@ TEST_CASE("dgmr sample_gaussian grad")
 
 TEST_CASE("dgmr spherical harmonics grad degree 0")
 {
-    check_sh_to_color<1>();
+    check_sh_to_color<0>();
 }
 
 TEST_CASE("dgmr spherical harmonics grad degree 1")
@@ -787,10 +792,10 @@ TEST_CASE("dgmr spherical harmonics grad degree 1")
 
 TEST_CASE("dgmr spherical harmonics grad degree 2")
 {
-    check_sh_to_color<1>();
+    check_sh_to_color<2>();
 }
 
 TEST_CASE("dgmr spherical harmonics grad degree 3")
 {
-    check_sh_to_color<1>();
+    check_sh_to_color<3>();
 }
