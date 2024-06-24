@@ -40,6 +40,10 @@ struct ForwardCache {
     torch::Tensor remaining_transparency;
 };
 
-ForwardCache forward(whack::TensorView<float, 3> framebuffer, vol_marcher::ForwardData& forward_data);
+template <typename scalar_t>
+ForwardCache forward(whack::TensorView<scalar_t, 3> framebuffer, vol_marcher::ForwardData<scalar_t>& forward_data);
+
+extern template ForwardCache forward<float>(whack::TensorView<float, 3> framebuffer, vol_marcher::ForwardData<float>& forward_data);
+extern template ForwardCache forward<double>(whack::TensorView<double, 3> framebuffer, vol_marcher::ForwardData<double>& forward_data);
 
 } // namespace dgmr::vol_marcher

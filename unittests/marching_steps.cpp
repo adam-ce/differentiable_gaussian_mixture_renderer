@@ -19,6 +19,7 @@
 #include <array>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_template_test_macros.hpp>
 
 #include <dgmr/marching_steps.h>
 
@@ -38,7 +39,7 @@ TEST_CASE("dgmr marching step DensityArray sampler")
 
     SECTION("empty")
     {
-        dgmr::marching_steps::DensityArray<4> arr(0.1f);
+        dgmr::marching_steps::DensityArray<4, float> arr(0.1f);
         const auto samples = dgmr::marching_steps::sample<16>(arr);
         for (auto i = 0u; i < samples.size(); ++i) {
             CHECK(samples[i] == 0);
@@ -47,7 +48,7 @@ TEST_CASE("dgmr marching step DensityArray sampler")
 
     SECTION("filled")
     {
-        dgmr::marching_steps::DensityArray<4> arr(0.1f);
+        dgmr::marching_steps::DensityArray<4, float> arr(0.1f);
         arr.put({ 0.2f, 1.0f, 0.1f });
         arr.put({ 1.0f, 2.0f, 0.2f });
         arr.put({ 2.0f, 2.5f, 0.5f });
@@ -64,13 +65,14 @@ TEST_CASE("dgmr marching step DensityArray sampler")
     }
 }
 
-TEST_CASE("dgmr marching step DensityArray")
+TEMPLATE_TEST_CASE("dgmr marching step DensityArray", "", float, double)
 {
+    using scalar_t = TestType;
     SECTION("combine function enveloping ab/ba")
     {
-        using DensityArray = dgmr::marching_steps::DensityArray<4>;
+        using DensityArray = dgmr::marching_steps::DensityArray<4, scalar_t>;
         {
-            auto v = DensityArray::combine({ 1, 4, 0.5f }, { 0, 5, 1 });
+            auto v = DensityArray::combine({ 1, 4, scalar_t(0.5) }, { 0, 5, 1 });
             CHECK(v[0].start == 0);
             CHECK(v[0].end == 1);
             CHECK(v[0].delta_t == 1);
@@ -128,7 +130,7 @@ TEST_CASE("dgmr marching step DensityArray")
     }
     SECTION("combine function same start")
     {
-        using DensityArray = dgmr::marching_steps::DensityArray<4>;
+        using DensityArray = dgmr::marching_steps::DensityArray<4, scalar_t>;
         {
             auto v = DensityArray::combine({ 0, 2, 0.5f }, { 0, 5, 1 });
             CHECK(v[0].start == 0);
@@ -184,7 +186,7 @@ TEST_CASE("dgmr marching step DensityArray")
     }
     SECTION("combine function same end")
     {
-        using DensityArray = dgmr::marching_steps::DensityArray<4>;
+        using DensityArray = dgmr::marching_steps::DensityArray<4, scalar_t>;
         {
             auto v = DensityArray::combine({ 0, 5, 1 }, { 2, 5, 0.5 });
             CHECK(v[0].start == 0);
@@ -241,7 +243,7 @@ TEST_CASE("dgmr marching step DensityArray")
 
     SECTION("non-overlapping end")
     {
-        dgmr::marching_steps::DensityArray<4> arr(0.5f);
+        dgmr::marching_steps::DensityArray<4, scalar_t> arr(0.5f);
         CHECK(arr.size() == 0);
         arr.put({ 0.0f, 0.4f, 0.8f });
         CHECK(arr.size() == 0);
@@ -278,7 +280,7 @@ TEST_CASE("dgmr marching step DensityArray")
 
     SECTION("non-overlapping middle")
     {
-        dgmr::marching_steps::DensityArray<4> arr(0.5f);
+        dgmr::marching_steps::DensityArray<4, scalar_t> arr(0.5f);
         CHECK(arr.size() == 0);
         arr.put({ 0.0f, 0.9f, 0.8f });
         arr.put({ 4.0f, 5.0f, 1.5f });
@@ -328,7 +330,7 @@ TEST_CASE("dgmr marching step DensityArray")
 
     SECTION("non-overlapping start")
     {
-        dgmr::marching_steps::DensityArray<4> arr(0.5f);
+        dgmr::marching_steps::DensityArray<4, scalar_t> arr(0.5f);
         CHECK(arr.size() == 0);
         arr.put({ 4.0f, 5.0f, 1.5f });
         CHECK(arr.size() == 1);
@@ -391,7 +393,7 @@ TEST_CASE("dgmr marching step DensityArray")
 
     SECTION("many overlapping not full")
     {
-        dgmr::marching_steps::DensityArray<16> arr(0.0f);
+        dgmr::marching_steps::DensityArray<16, scalar_t> arr(0.0f);
         arr.put({ 0.2f, 0.5f, 0.5f });
         arr.put({ 1.0f, 1.5f, 0.5f });
         arr.put({ 2.0f, 2.5f, 0.5f });
@@ -475,7 +477,7 @@ TEST_CASE("dgmr marching step DensityArray")
 
     SECTION("many overlapping over full")
     {
-        dgmr::marching_steps::DensityArray<16> arr(0.0f);
+        dgmr::marching_steps::DensityArray<16, scalar_t> arr(0.0f);
         arr.put({ 0.2f, 0.5f, 0.5f });
         arr.put({ 1.0f, 1.5f, 0.5f });
         arr.put({ 2.0f, 2.5f, 0.5f });
@@ -567,7 +569,7 @@ TEST_CASE("dgmr marching step DensityArray")
 
     SECTION("overlapping end not full")
     {
-        dgmr::marching_steps::DensityArray<4> arr(0.5f);
+        dgmr::marching_steps::DensityArray<4, scalar_t> arr(0.5f);
         arr.put({ 0.0f, 1.5f, 0.5f });
         CHECK(arr.size() == 1);
         CHECK(arr[0].start == 0.5f);
@@ -605,7 +607,7 @@ TEST_CASE("dgmr marching step DensityArray")
 
     SECTION("splitting in the middle")
     {
-        dgmr::marching_steps::DensityArray<4> arr(0.5f);
+        dgmr::marching_steps::DensityArray<4, scalar_t> arr(0.5f);
         arr.put({ 1.0f, 1.5f, 0.5f });
         arr.put({ 2.0f, 2.5f, 0.5f });
         arr.put({ 3.0f, 3.5f, 0.5f });
@@ -633,7 +635,7 @@ TEST_CASE("dgmr marching step DensityArray")
 
     SECTION("splitting in the middle 2")
     {
-        dgmr::marching_steps::DensityArray<16> arr(0.5f);
+        dgmr::marching_steps::DensityArray<16, scalar_t> arr(0.5f);
         arr.put({ 1.0f, 1.5f, 0.5f });
         arr.put({ 2.0f, 2.5f, 0.5f });
         arr.put({ 3.0f, 3.5f, 0.5f });
@@ -668,7 +670,7 @@ TEST_CASE("dgmr marching step DensityArray")
     }
     SECTION("splitting in the middle 3")
     {
-        dgmr::marching_steps::DensityArray<4> arr(0.5f);
+        dgmr::marching_steps::DensityArray<4, scalar_t> arr(0.5f);
         arr.put({ 1.0f, 1.5f, 0.5f });
         arr.put({ 2.0f, 2.5f, 0.5f });
 
@@ -694,7 +696,7 @@ TEST_CASE("dgmr marching step DensityArray")
 
     SECTION("new element merges several old ones")
     {
-        dgmr::marching_steps::DensityArray<16> arr(0.0f);
+        dgmr::marching_steps::DensityArray<16, scalar_t> arr(0.0f);
         arr.put({ 0.2f, 0.5f, 0.5f });
         arr.put({ 1.0f, 1.5f, 0.5f });
         arr.put({ 2.0f, 2.5f, 0.5f });
@@ -713,7 +715,7 @@ TEST_CASE("dgmr marching step DensityArray")
 
     SECTION("new element merges several old ones in the middle")
     {
-        dgmr::marching_steps::DensityArray<16> arr(0.0f);
+        dgmr::marching_steps::DensityArray<16, scalar_t> arr(0.0f);
         arr.put({ 0.2f, 0.5f, 0.5f });
         arr.put({ 1.0f, 1.5f, 0.5f });
         arr.put({ 2.0f, 2.5f, 0.5f });
@@ -757,7 +759,7 @@ TEST_CASE("dgmr marching step DensityArray")
 
     SECTION("new element merges several old ones in the middle 2")
     {
-        dgmr::marching_steps::DensityArray<16> arr(0.0f);
+        dgmr::marching_steps::DensityArray<16, scalar_t> arr(0.0f);
         arr.put({ 0.2f, 0.5f, 0.5f });
         arr.put({ 1.0f, 1.5f, 0.5f });
         arr.put({ 2.0f, 2.5f, 0.5f });
@@ -793,7 +795,7 @@ TEST_CASE("dgmr marching step DensityArray")
 
     SECTION("new element merges several old ones in the middle 3")
     {
-        dgmr::marching_steps::DensityArray<16> arr(0.0f);
+        dgmr::marching_steps::DensityArray<16, scalar_t> arr(0.0f);
         arr.put({ 0.2f, 0.5f, 0.5f });
         arr.put({ 1.0f, 1.5f, 0.5f });
         arr.put({ 2.0f, 2.5f, 0.5f });
@@ -817,7 +819,7 @@ TEST_CASE("dgmr marching step DensityArray")
 
     SECTION("new element merges several old ones in the middle 4")
     {
-        dgmr::marching_steps::DensityArray<16> arr(0.0f);
+        dgmr::marching_steps::DensityArray<16, scalar_t> arr(0.0f);
         arr.put({ 0.2f, 0.5f, 0.5f });
         arr.put({ 1.0f, 1.5f, 0.5f });
         arr.put({ 2.0f, 2.5f, 0.5f });
@@ -844,7 +846,7 @@ TEST_CASE("dgmr marching step DensityArray")
 
     SECTION("new element fits in without changing the last ones 1")
     {
-        dgmr::marching_steps::DensityArray<8> arr(0.0f);
+        dgmr::marching_steps::DensityArray<8, scalar_t> arr(0.0f);
         arr.put({ 0.2f, 0.5f, 0.5f });
         arr.put({ 1.0f, 1.5f, 0.5f });
         arr.put({ 2.0f, 2.5f, 0.5f });
@@ -872,7 +874,7 @@ TEST_CASE("dgmr marching step DensityArray")
 
     SECTION("new new element fits in without changing the last ones 2")
     {
-        dgmr::marching_steps::DensityArray<4> arr(0.0f);
+        dgmr::marching_steps::DensityArray<4, scalar_t> arr(0.0f);
         arr.put({ 0.2f, 0.5f, 0.5f });
         arr.put({ 1.0f, 1.5f, 0.5f });
         arr.put({ 2.0f, 2.5f, 0.5f });
@@ -900,7 +902,7 @@ TEST_CASE("dgmr marching step DensityArray")
 
     SECTION("new element envelopse old with higher delta (used to crash)")
     {
-        dgmr::marching_steps::DensityArray<8> arr(0.0f);
+        dgmr::marching_steps::DensityArray<8, scalar_t> arr(0.0f);
         arr.put({ 1, 2, 1 });
         arr.put({ 3, 4, 1 });
         arr.put({ 5, 6, 1 });
@@ -938,15 +940,15 @@ TEST_CASE("dgmr marching step DensityArray")
     {
         std::srand(0);
         const auto r = []() {
-            return float(std::rand()) / float(RAND_MAX);
+            return scalar_t(std::rand()) / scalar_t(RAND_MAX);
         };
         for (auto i = 0u; i < 1000; ++i) {
             const auto smallest = r();
-            dgmr::marching_steps::DensityArray<8> arr(smallest);
-            std::vector<dgmr::marching_steps::DensityEntry> entries;
+            dgmr::marching_steps::DensityArray<8, scalar_t> arr(smallest);
+            std::vector<dgmr::marching_steps::DensityEntry<scalar_t>> entries;
 
-            const auto get_real_delta_t_at = [&](float t) {
-                auto delta_t = 1.f / 0.f;
+            const auto get_real_delta_t_at = [&](scalar_t t) {
+                auto delta_t = scalar_t(1) / scalar_t(0);
                 for (const auto& e : entries) {
                     if (e.start <= t && t < e.end)
                         delta_t = stroke::min(delta_t, e.delta_t);
@@ -954,14 +956,14 @@ TEST_CASE("dgmr marching step DensityArray")
                 return delta_t;
             };
 
-            const auto get_computed_delta_t_at = [&](float t) {
+            const auto get_computed_delta_t_at = [&](scalar_t t) {
                 for (auto i = 0u; i < arr.size(); ++i) {
                     const auto& e = arr[i];
                     if (e.start <= t && t < e.end) {
                         return e.delta_t;
                     }
                 }
-                return 1.0f / 0.0f;
+                return scalar_t(1) / scalar_t(0);
             };
 
             for (auto j = 0u; j < 100; ++j) {

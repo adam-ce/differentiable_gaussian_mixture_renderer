@@ -25,21 +25,22 @@
 
 namespace dgmr::marching_steps {
 
+template<typename scalar_t>
 struct DensityEntry {
-    float start;
-    float end;
-    float delta_t;
+    scalar_t start;
+    scalar_t end;
+    scalar_t delta_t;
 };
 
-template <unsigned max_size>
+template <unsigned max_size, typename scalar_t>
 class DensityArray {
     unsigned m_size = 0;
-    whack::Array<DensityEntry, max_size> m_data;
-    float m_start;
-    float m_end = 1.f / 0.f;
+    whack::Array<DensityEntry<scalar_t>, max_size> m_data;
+    scalar_t m_start;
+    scalar_t m_end = scalar_t(1) / scalar_t(0);
 
 public:
-    STROKE_DEVICES_INLINE DensityArray(float start)
+    STROKE_DEVICES_INLINE DensityArray(scalar_t start)
         : m_start(start)
     {
     }
@@ -47,30 +48,30 @@ public:
     {
         return m_size;
     }
-    STROKE_DEVICES_INLINE float start() const
+    STROKE_DEVICES_INLINE scalar_t start() const
     {
         return m_start;
     }
-    STROKE_DEVICES_INLINE float end() const
+    STROKE_DEVICES_INLINE scalar_t end() const
     {
         return m_end;
     }
 
-    STROKE_DEVICES_INLINE DensityEntry& operator[](unsigned index)
+    STROKE_DEVICES_INLINE DensityEntry<scalar_t>& operator[](unsigned index)
     {
         assert(index < m_size);
         return m_data[index];
     }
 
-    STROKE_DEVICES_INLINE const DensityEntry& operator[](unsigned index) const
+    STROKE_DEVICES_INLINE const DensityEntry<scalar_t>& operator[](unsigned index) const
     {
         assert(index < m_size);
         return m_data[index];
     }
 
-    STROKE_DEVICES_INLINE static whack::Array<DensityEntry, 3> combine(const DensityEntry& a, const DensityEntry& b)
+    STROKE_DEVICES_INLINE static whack::Array<DensityEntry<scalar_t>, 3> combine(const DensityEntry<scalar_t>& a, const DensityEntry<scalar_t>& b)
     {
-        whack::Array<DensityEntry, 3> tmp;
+        whack::Array<DensityEntry<scalar_t>, 3> tmp;
         // not overlapping
         if (a.start < b.start) {
             tmp[0].start = a.start;
@@ -99,18 +100,18 @@ public:
         return tmp;
     }
 
-    STROKE_DEVICES_INLINE void put(DensityEntry entry)
+    STROKE_DEVICES_INLINE void put(DensityEntry<scalar_t> entry)
     {
-        const auto find = [this](float v, unsigned find_from = 0u) {
+        const auto find = [this](scalar_t v, unsigned find_from = 0u) {
             for (auto i = find_from; i < m_size; ++i) {
-                const DensityEntry& e = m_data[i];
+                const DensityEntry<scalar_t>& e = m_data[i];
                 if (e.end > v)
                     return i;
             }
             return m_size;
         };
 
-        const auto compact = [](whack::Array<DensityEntry, 3> data) {
+        const auto compact = [](whack::Array<DensityEntry<scalar_t>, 3> data) {
             if (data[0].delta_t == data[1].delta_t) {
                 data[1].start = data[0].start;
                 data[0].end = data[0].start;
@@ -143,7 +144,7 @@ public:
         // assert this entry is the first not touched any more
         assert(p_e == m_size || m_data[p_e].start >= entry.end);
 
-        whack::Array<DensityEntry, max_size> tmp;
+        whack::Array<DensityEntry<scalar_t>, max_size> tmp;
         unsigned tmp_read = 0;
         unsigned tmp_write = 0;
         auto i_read = p_s;
@@ -198,13 +199,13 @@ public:
     }
 };
 
-template <unsigned n_samples, unsigned n_density_sections>
-STROKE_DEVICES_INLINE whack::Array<float, n_samples> sample(const DensityArray<n_density_sections>& densities)
+template <unsigned n_samples, unsigned n_density_sections, typename scalar_t>
+STROKE_DEVICES_INLINE whack::Array<scalar_t, n_samples> sample(const DensityArray<n_density_sections, scalar_t>& densities)
 {
     if (densities.size() == 0)
         return {};
 
-    whack::Array<float, n_samples> samples;
+    whack::Array<scalar_t, n_samples> samples;
     samples[0] = densities[0].start;
     unsigned current_density_index = 0;
     for (auto i = 1u; i < samples.size(); ++i) {

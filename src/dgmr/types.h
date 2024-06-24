@@ -31,6 +31,6 @@ enum class Formulation : int {
     Ols // Opacity long side, view dependent, but scaled between 0 and 1 for the longest axis of the gaussian
 };
 
-template <int D>
-using SHs = whack::Array<glm::vec3, (D + 1) * (D + 1)>;
+template <int D, typename scalar_t>
+using SHs = whack::Array<glm::vec<3, scalar_t>, (D + 1) * (D + 1)>;
 }

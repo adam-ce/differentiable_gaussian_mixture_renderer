@@ -38,13 +38,22 @@ namespace gaussian = stroke::gaussian;
 
 } // namespace
 
-dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<float, 3> framebuffer, vol_marcher::ForwardData& data)
+
+template <typename scalar_t>
+dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<scalar_t, 3> framebuffer, vol_marcher::ForwardData<scalar_t>& data)
 {
-    const auto fb_width = framebuffer.size<2>();
-    const auto fb_height = framebuffer.size<1>();
-    const auto n_gaussians = data.gm_weights.size<0>();
-    const float focal_y = fb_height / (2.0f * data.tan_fovy);
-    const float focal_x = fb_width / (2.0f * data.tan_fovx);
+    using Vec2 = glm::vec<2, scalar_t>;
+    using Vec3 = glm::vec<3, scalar_t>;
+    using Vec4 = glm::vec<4, scalar_t>;
+    using Mat4 = glm::mat<4, 4, scalar_t>;
+    using Cov3 = stroke::Cov3<scalar_t>;
+
+    const auto torch_float_type = (sizeof(scalar_t) == 4) ? torch::kFloat32 : torch::kFloat64;
+    const auto fb_width = framebuffer.template size<2>();
+    const auto fb_height = framebuffer.template size<1>();
+    const auto n_gaussians = data.gm_weights.template size<0>();
+    const auto focal_y = fb_height / (2.0f * data.tan_fovy);
+    const auto focal_x = fb_width / (2.0f * data.tan_fovx);
     const auto aa_distance_multiplier = (config::filter_kernel_SD * data.tan_fovx * 2) / fb_width;
 
     constexpr dim3 render_block_dim = { render_block_width, render_block_height };
@@ -58,23 +67,23 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<flo
     cache.rects = torch::empty({ n_gaussians, 2 }, torch::TensorOptions().dtype(torch::kInt).device(torch::kCUDA));
     auto g_rects = whack::make_tensor_view<glm::uvec2>(cache.rects, n_gaussians);
 
-    cache.rgb = torch::empty({ n_gaussians, 3 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
-    auto g_rgb = whack::make_tensor_view<glm::vec3>(cache.rgb, n_gaussians);
+    cache.rgb = torch::empty({ n_gaussians, 3 }, torch::TensorOptions().dtype(torch_float_type).device(torch::kCUDA));
+    auto g_rgb = whack::make_tensor_view<Vec3>(cache.rgb, n_gaussians);
 
     cache.rgb_sh_clamped = torch::empty({ n_gaussians, 3 }, torch::TensorOptions().dtype(torch::kBool).device(torch::kCUDA));
     auto g_rgb_sh_clamped = whack::make_tensor_view<glm::vec<3, bool>>(cache.rgb_sh_clamped, n_gaussians);
 
-    cache.depths = torch::empty({ n_gaussians }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
-    auto g_depths = whack::make_tensor_view<float>(cache.depths, n_gaussians);
+    cache.depths = torch::empty({ n_gaussians }, torch::TensorOptions().dtype(torch_float_type).device(torch::kCUDA));
+    auto g_depths = whack::make_tensor_view<scalar_t>(cache.depths, n_gaussians);
 
-    cache.points_xy_image = torch::empty({ n_gaussians, 2 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
-    auto g_points_xy_image = whack::make_tensor_view<glm::vec2>(cache.points_xy_image, n_gaussians);
+    cache.points_xy_image = torch::empty({ n_gaussians, 2 }, torch::TensorOptions().dtype(torch_float_type).device(torch::kCUDA));
+    auto g_points_xy_image = whack::make_tensor_view<Vec2>(cache.points_xy_image, n_gaussians);
 
-    cache.inverse_filtered_cov3d = torch::empty({ n_gaussians, 6 }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
-    auto g_inverse_filtered_cov3d = whack::make_tensor_view<stroke::Cov3_f>(cache.inverse_filtered_cov3d, n_gaussians);
+    cache.inverse_filtered_cov3d = torch::empty({ n_gaussians, 6 }, torch::TensorOptions().dtype(torch_float_type).device(torch::kCUDA));
+    auto g_inverse_filtered_cov3d = whack::make_tensor_view<Cov3>(cache.inverse_filtered_cov3d, n_gaussians);
 
-    cache.filtered_masses = torch::empty({ n_gaussians }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
-    auto g_filtered_masses = whack::make_tensor_view<float>(cache.filtered_masses, n_gaussians);
+    cache.filtered_masses = torch::empty({ n_gaussians }, torch::TensorOptions().dtype(torch_float_type).device(torch::kCUDA));
+    auto g_filtered_masses = whack::make_tensor_view<scalar_t>(cache.filtered_masses, n_gaussians);
 
     cache.tiles_touched = torch::empty({ n_gaussians }, torch::TensorOptions().dtype(torch::kInt).device(torch::kCUDA));
     auto g_tiles_touched = whack::make_tensor_view<uint32_t>(cache.tiles_touched, n_gaussians);
@@ -82,17 +91,17 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<flo
     cache.point_offsets = torch::empty({ n_gaussians }, torch::TensorOptions().dtype(torch::kInt).device(torch::kCUDA));
     auto g_point_offsets = whack::make_tensor_view<uint32_t>(cache.point_offsets, n_gaussians);
 
-    cache.remaining_transparency = torch::empty({ fb_height, fb_width }, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
-    auto remaining_transparency = whack::make_tensor_view<float>(cache.remaining_transparency, fb_height, fb_width);
+    cache.remaining_transparency = torch::empty({ fb_height, fb_width }, torch::TensorOptions().dtype(torch_float_type).device(torch::kCUDA));
+    auto remaining_transparency = whack::make_tensor_view<scalar_t>(cache.remaining_transparency, fb_height, fb_width);
 
     // preprocess, run per Gaussian
     {
-        math::Camera<float> camera {
+        math::Camera<scalar_t> camera {
             data.view_matrix, data.proj_matrix, focal_x, focal_y, data.tan_fovx, data.tan_fovy, fb_width, fb_height
         };
 
         const dim3 block_dim = { 128 };
-        const dim3 grid_dim = whack::grid_dim_from_total_size({ data.gm_weights.size<0>() }, block_dim);
+        const dim3 grid_dim = whack::grid_dim_from_total_size({ data.gm_weights.template size<0>() }, block_dim);
         whack::start_parallel(
             whack::Location::Device, grid_dim, block_dim, WHACK_KERNEL(=) {
                 WHACK_UNUSED(whack_gridDim);
@@ -105,7 +114,7 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<flo
                 g_tiles_touched(idx) = 0;
 
                 const auto centroid = data.gm_centroids(idx);
-                if ((data.view_matrix * glm::vec4(centroid, 1.f)).z < 0.2) // adam doesn't understand, why projection matrix > 0 isn't enough.
+                if ((data.view_matrix * Vec4(centroid, 1.f)).z < 0.2f)
                     return;
 
                 const auto weight = data.gm_weights(idx);
@@ -113,14 +122,14 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<flo
                 const auto rotation = data.gm_cov_rotations(idx);
                 const auto dist = glm::length(data.cam_poition - centroid);
 
-                const auto screen_space_gaussian = math::splat<vol_marcher::config::gaussian_mixture_formulation>(weight, centroid, scales, rotation, camera, 0.3f);
+                const auto screen_space_gaussian = math::splat<vol_marcher::config::gaussian_mixture_formulation>(weight, centroid, scales, rotation, camera, scalar_t(config::filter_kernel_SD * config::filter_kernel_SD));
 
                 const auto cov3d = math::compute_cov(scales, rotation);
 
                 // low pass filter to combat aliasing
                 const auto filter_kernel_size = dist * aa_distance_multiplier;
-                const auto filtered_cov_3d = cov3d + stroke::Cov3_f(filter_kernel_size * filter_kernel_size);
-                const auto filtered_scales = scales + glm::vec3(filter_kernel_size * filter_kernel_size);
+                const auto filtered_cov_3d = cov3d + Cov3(filter_kernel_size * filter_kernel_size);
+                const auto filtered_scales = scales + Vec3(filter_kernel_size * filter_kernel_size);
                 const auto mass = math::weight_to_mass<vol_marcher::config::gaussian_mixture_formulation>(weight, filtered_scales);
                 if (mass <= 0)
                     return; // clipped
@@ -128,11 +137,11 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<flo
                 // using the more aggressive computation for calculating overlapping tiles:
                 {
                     // get exact distance to 1./255. isoline
-                    const auto isoline_distance = [](float w, float variance, float isoline) {
+                    const auto isoline_distance = [](scalar_t w, scalar_t variance, scalar_t isoline) {
                         // solve w * gaussian(x, sd) == isoline for x
                         const auto s = -2 * stroke::log(isoline / w);
                         if (s <= 0)
-                            return 0.f;
+                            return scalar_t(0);
                         return stroke::sqrt(s * variance);
                     };
                     // const glm::uvec2 my_rect = { (int)ceil(3.f * sqrt(screen_space_gaussian.cov[0])), (int)ceil(3.f * sqrt(screen_space_gaussian.cov[2])) };
@@ -178,7 +187,7 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<flo
         CHECK_CUDA(data.debug);
     }
 
-    const auto n_render_gaussians = unsigned(cache.point_offsets[n_gaussians - 1].item<int>());
+    const auto n_render_gaussians = unsigned(cache.point_offsets[n_gaussians - 1].template item<int>());
     if (n_render_gaussians == 0)
         return {};
 
@@ -221,7 +230,8 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<flo
                     for (unsigned x = rect_min.x; x < rect_max.x; x++) {
                         uint64_t key = y * render_grid_dim.x + x;
                         key <<= 32;
-                        key |= *((uint32_t*)&g_depths(idx)); // take the bits of a float
+                        float depth_f = float(g_depths(idx));
+                        key |= *((uint32_t*)&depth_f); // take the bits of a float
 
                         b_point_list_keys_unsorted(off) = key;
                         b_point_list_unsorted(off) = idx;
@@ -295,11 +305,11 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<flo
                 const glm::uvec2 pix_min = { whack_blockIdx.x * whack_blockDim.x, whack_blockIdx.y * whack_blockDim.y };
                 const glm::uvec2 pix_max = min(pix_min + glm::uvec2(whack_blockDim.x, whack_blockDim.y), glm::uvec2(fb_width, fb_height));
                 const glm::uvec2 pix = pix_min + glm::uvec2(whack_threadIdx.x, whack_threadIdx.y);
-                const glm::vec2 pix_ndc = glm::vec2(pix * glm::uvec2(2)) / glm::vec2(fb_width, fb_height) - glm::vec2(1);
-                auto view_at_world = inversed_projectin_matrix * glm::vec4(pix_ndc, -1, 1.0);
+                const Vec2 pix_ndc = Vec2(pix * glm::uvec2(2)) / Vec2(fb_width, fb_height) - Vec2(1);
+                auto view_at_world = inversed_projectin_matrix * Vec4(pix_ndc, -1, 1.0);
                 view_at_world /= view_at_world.w;
 
-                const auto ray = stroke::Ray<3, float> { data.cam_poition, glm::normalize(glm::vec3(view_at_world) - data.cam_poition) };
+                const auto ray = stroke::Ray<3, scalar_t> { data.cam_poition, glm::normalize(Vec3(view_at_world) - data.cam_poition) };
                 const unsigned thread_rank = whack_blockDim.x * whack_threadIdx.y + whack_threadIdx.x;
 
                 // Check if this thread is associated with a valid pixel or outside.
@@ -313,20 +323,20 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<flo
 
                 // Allocate storage for batches of collectively fetched data.
                 __shared__ int collected_id[render_block_size];
-                __shared__ float collected_3d_masses[render_block_size];
-                __shared__ glm::vec3 collected_centroid[render_block_size];
-                __shared__ stroke::Cov3<float> collected_inv_cov3[render_block_size];
+                __shared__ scalar_t collected_3d_masses[render_block_size];
+                __shared__ Vec3 collected_centroid[render_block_size];
+                // __shared__ Cov3 collected_inv_cov3[render_block_size];
 
                 bool large_stepping_ongoing = true;
-                float current_large_step_start = 0.f;
+                scalar_t current_large_step_start = 0.f;
 
-                glm::vec3 current_colour = glm::vec3(0);
-                float current_transparency = 1;
-                float distance_marched_tmp = 0;
+                Vec3 current_colour = Vec3(0);
+                scalar_t current_transparency = 1;
+                scalar_t distance_marched_tmp = 0;
 
                 while (large_stepping_ongoing) {
                     // Iterate over all gaussians and compute sample_sections
-                    marching_steps::DensityArray<config::n_large_steps> sample_sections(current_large_step_start);
+                    marching_steps::DensityArray<config::n_large_steps, scalar_t> sample_sections(current_large_step_start);
                     n_toDo = render_g_range.y - render_g_range.x;
                     bool done_1 = !inside;
                     for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {
@@ -342,7 +352,7 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<flo
                             assert(coll_id < n_gaussians);
                             collected_id[thread_rank] = coll_id;
                             collected_centroid[thread_rank] = data.gm_centroids(coll_id);
-                            collected_inv_cov3[thread_rank] = g_inverse_filtered_cov3d(coll_id);
+                            // collected_inv_cov3[thread_rank] = g_inverse_filtered_cov3d(coll_id);
                             collected_3d_masses[thread_rank] = g_filtered_masses(coll_id);
                         }
                         __syncthreads();
@@ -353,8 +363,8 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<flo
                         // Iterate over current batch
                         // don't forget about the backward pass when editing this loop.
                         // think about moving to a function.
-                        for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
-                            const auto gaussian1d = gaussian::intersect_with_ray_inv_C(collected_centroid[j], collected_inv_cov3[j], ray);
+                        for (unsigned j = 0; j < stroke::min(render_block_size, n_toDo); j++) {
+                            const auto gaussian1d = gaussian::intersect_with_ray_inv_C(collected_centroid[j], g_inverse_filtered_cov3d(collected_id[j]), ray);
                             const auto sd = stroke::sqrt(gaussian1d.C);
 
                             if (sample_sections.end() < g_depths(collected_id[j])) {
@@ -363,16 +373,16 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<flo
                             }
 
                             auto mass_on_ray = gaussian1d.weight * collected_3d_masses[j];
-                            if (mass_on_ray <= 1.1f / 255.f || mass_on_ray > 1'000)
+                            if (mass_on_ray <= 1.0f / 255.f || mass_on_ray > 1'000)
                                 continue;
                             if (gaussian1d.C <= 0)
                                 continue;
                             if (stroke::isnan(gaussian1d.centre))
                                 continue;
 
-                            const float start = gaussian1d.centre - sd * config::gaussian_relevance_sigma;
-                            const float end = gaussian1d.centre + sd * config::gaussian_relevance_sigma;
-                            const float delta_t = (sd * config::gaussian_relevance_sigma * 2) / (config::n_steps_per_gaussian - 1);
+                            const scalar_t start = gaussian1d.centre - sd * config::gaussian_relevance_sigma;
+                            const scalar_t end = gaussian1d.centre + sd * config::gaussian_relevance_sigma;
+                            const scalar_t delta_t = (sd * config::gaussian_relevance_sigma * 2) / (config::n_steps_per_gaussian - 1);
 
                             sample_sections.put({ start, end, delta_t });
                         }
@@ -380,7 +390,7 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<flo
 
                     // compute sampling
                     const auto bin_borders = marching_steps::sample<config::n_small_steps>(sample_sections);
-                    whack::Array<glm::vec4, config::n_small_steps - 1> bin_eval = {};
+                    whack::Array<Vec4, config::n_small_steps - 1> bin_eval = {};
 
                     // float dbg_mass_in_bins_closeed = 0;
                     // float dbg_mass_in_bins_numerik_1 = 0;
@@ -400,7 +410,7 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<flo
                             assert(coll_id < n_gaussians);
                             collected_id[thread_rank] = coll_id;
                             collected_centroid[thread_rank] = data.gm_centroids(coll_id);
-                            collected_inv_cov3[thread_rank] = g_inverse_filtered_cov3d(coll_id);
+                            // collected_inv_cov3[thread_rank] = g_inverse_filtered_cov3d(coll_id);
                             collected_3d_masses[thread_rank] = g_filtered_masses(coll_id);
                         }
                         __syncthreads();
@@ -409,38 +419,38 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<flo
                             continue;
 
                         // Iterate over current batch
-                        for (unsigned j = 0; j < min(render_block_size, n_toDo); j++) {
-                            math::sample_gaussian(collected_3d_masses[j], g_rgb(collected_id[j]), collected_centroid[j], collected_inv_cov3[j], ray, bin_borders, &bin_eval);
+                        for (unsigned j = 0; j < stroke::min(render_block_size, n_toDo); j++) {
+                            math::sample_gaussian(collected_3d_masses[j], g_rgb(collected_id[j]), collected_centroid[j], g_inverse_filtered_cov3d(collected_id[j]), ray, bin_borders, &bin_eval);
                         }
                     }
 
                     // blend
                     switch (data.debug_render_mode) {
-                    case vol_marcher::ForwardData::RenderMode::Full: {
+                    case vol_marcher::ForwardData<scalar_t>::RenderMode::Full: {
                         cuda::std::tie(current_colour, current_transparency) = math::integrate_bins(current_colour, current_transparency, bin_eval);
                         break;
                     }
-                    case vol_marcher::ForwardData::RenderMode::Bins: {
+                    case vol_marcher::ForwardData<scalar_t>::RenderMode::Bins: {
                         const auto bin = stroke::min(unsigned(data.debug_render_bin), bin_eval.size() - 1);
                         const auto mass = sum(bin_eval[bin]);
                         // const auto mass = (bin == 0) ? dbg_mass_in_bins_closeed : dbg_mass_in_bins_numerik_1;
-                        current_colour = glm::vec3(mass * data.max_depth);
+                        current_colour = Vec3(mass * data.max_depth);
                         if (mass == 0)
-                            current_colour = glm::vec3(0, 1.0, 0);
+                            current_colour = Vec3(0, 1.0, 0);
                         if (stroke::isnan(mass))
-                            current_colour = glm::vec3(1, 0, 0.5);
+                            current_colour = Vec3(1, 0, 0.5);
                         if (mass < 0)
-                            current_colour = glm::vec3(1, 0.0, 0);
+                            current_colour = Vec3(1, 0.0, 0);
                         current_transparency = 0;
                         break;
                     }
-                    case vol_marcher::ForwardData::RenderMode::Depth: {
+                    case vol_marcher::ForwardData<scalar_t>::RenderMode::Depth: {
                         for (auto k = 0u; k < bin_eval.size(); ++k) {
                             const auto eval_t = bin_eval[k];
                             current_transparency *= stroke::exp(-eval_t.w);
                         }
                         distance_marched_tmp = stroke::max(sample_sections.end(), distance_marched_tmp);
-                        current_colour = glm::vec3(distance_marched_tmp / data.max_depth, distance_marched_tmp / data.max_depth, distance_marched_tmp / data.max_depth);
+                        current_colour = Vec3(distance_marched_tmp / data.max_depth, distance_marched_tmp / data.max_depth, distance_marched_tmp / data.max_depth);
                         // const auto bin = stroke::min(unsigned(data.debug_render_bin), sample_sections.size() - 1);
                         // const auto distance = sample_sections[bin].end;
                         // // const auto bin = stroke::min(unsigned(data.debug_render_bin), current_large_steps.size() - 1);
@@ -476,3 +486,7 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<flo
     }
     return cache;
 }
+
+
+template dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward<float>(whack::TensorView<float, 3> framebuffer, vol_marcher::ForwardData<float>& forward_data);
+template dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward<double>(whack::TensorView<double, 3> framebuffer, vol_marcher::ForwardData<double>& forward_data);

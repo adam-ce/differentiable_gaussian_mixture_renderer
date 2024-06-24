@@ -30,7 +30,7 @@ struct VolRasterStatistics {
 
 struct VolRasterForwardData {
     whack::TensorView<const glm::vec3, 1> gm_centroids;
-    whack::TensorView<const SHs<3>, 1> gm_sh_params;
+    whack::TensorView<const SHs<3, float>, 1> gm_sh_params;
     whack::TensorView<const float, 1> gm_weights;
     whack::TensorView<const glm::vec3, 1> gm_cov_scales;
     whack::TensorView<const glm::quat, 1> gm_cov_rotations;

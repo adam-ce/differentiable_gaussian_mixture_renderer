@@ -28,7 +28,7 @@ void dgmr::sibr_interfaces::splat(SplatForwardData& forward_data)
     dgmr::splat_forward(forward_data);
 }
 
-void dgmr::sibr_interfaces::vol_march(whack::TensorView<float, 3> framebuffer, vol_marcher::ForwardData& forward_data)
+void dgmr::sibr_interfaces::vol_march(whack::TensorView<float, 3> framebuffer, vol_marcher::ForwardData<float>& forward_data)
 {
 
     // const auto start_f = std::chrono::system_clock::now();

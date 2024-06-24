@@ -24,22 +24,25 @@
 
 namespace dgmr::vol_marcher {
 
+template<typename scalar_t>
 struct ForwardData {
-    whack::TensorView<const glm::vec3, 1> gm_centroids;
-    whack::TensorView<const SHs<3>, 1> gm_sh_params;
-    whack::TensorView<const float, 1> gm_weights;
-    whack::TensorView<const glm::vec3, 1> gm_cov_scales;
-    whack::TensorView<const glm::quat, 1> gm_cov_rotations;
+    using Vec3 = glm::vec<3, scalar_t>;
+    using Mat4 = glm::mat<4, 4, scalar_t>;
+    whack::TensorView<const Vec3, 1> gm_centroids;
+    whack::TensorView<const SHs<3, scalar_t>, 1> gm_sh_params;
+    whack::TensorView<const scalar_t, 1> gm_weights;
+    whack::TensorView<const Vec3, 1> gm_cov_scales;
+    whack::TensorView<const glm::qua<scalar_t>, 1> gm_cov_rotations;
 
-    glm::mat4 view_matrix = glm::mat4(0);
-    glm::mat4 proj_matrix = glm::mat4(0);
-    glm::vec3 cam_poition = glm::vec3(0);
-    glm::vec3 background = glm::vec3(0);
+    Mat4 view_matrix = Mat4(0);
+    Mat4 proj_matrix = Mat4(0);
+    Vec3 cam_poition = Vec3(0);
+    Vec3 background = Vec3(0);
     int sh_degree = 3;
-    float cov_scale_multiplier = 1.f;
-    float tan_fovy = 0.f;
-    float tan_fovx = 0.f;
-    float max_depth = 20.f;
+    scalar_t cov_scale_multiplier = 1.f;
+    scalar_t tan_fovy = 0.f;
+    scalar_t tan_fovx = 0.f;
+    scalar_t max_depth = 20.f;
     bool debug = true;
     enum class RenderMode {
         Full,

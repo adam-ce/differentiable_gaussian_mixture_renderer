@@ -384,12 +384,12 @@ void check_smaller2()
 template <unsigned sh_degree>
 void check_sh_to_color()
 {
-    using scalar_t = float; // sh don't support double atm
+    using scalar_t = double;
     using vec3_t = glm::vec<3, scalar_t>;
 
     whack::random::HostGenerator<scalar_t> rnd;
     const auto gen_harmonic = [&]() {
-        dgmr::SHs<3> retval = {};
+        dgmr::SHs<3, scalar_t> retval = {};
         for (auto i = 0u; i < retval.size(); ++i) {
             retval[i] = rnd.normal3();
         }
@@ -398,13 +398,13 @@ void check_sh_to_color()
 
     for (int i = 0; i < 10; ++i) {
         const auto fun = [&](const whack::Tensor<scalar_t, 1>& input) {
-            const auto [sh, dir] = stroke::extract<dgmr::SHs<3>, vec3_t>(input);
+            const auto [sh, dir] = stroke::extract<dgmr::SHs<3, scalar_t>, vec3_t>(input);
             const auto [rgb, clamped] = dgmr::math::sh_to_colour(sh, sh_degree, dir);
             return stroke::pack_tensor<scalar_t>(rgb);
         };
 
         const auto fun_grad = [&](const whack::Tensor<scalar_t, 1>& input, const whack::Tensor<scalar_t, 1>& grad_output) {
-            const auto [sh, dir] = stroke::extract<dgmr::SHs<3>, vec3_t>(input);
+            const auto [sh, dir] = stroke::extract<dgmr::SHs<3, scalar_t>, vec3_t>(input);
             const auto [rgb, clamped] = dgmr::math::sh_to_colour(sh, sh_degree, dir);
 
             const auto grad_incoming = stroke::extract<vec3_t>(grad_output);

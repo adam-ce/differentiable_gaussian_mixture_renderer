@@ -23,16 +23,16 @@
 
 namespace dgmr {
 // Spherical harmonics coefficients
-constexpr float SH_C0 = 0.28209479177387814f;
-constexpr float SH_C1 = 0.4886025119029199f;
-constexpr auto SH_C2 = whack::Array<float, 5> {
+constexpr double SH_C0 = 0.28209479177387814f;
+constexpr double SH_C1 = 0.4886025119029199f;
+constexpr auto SH_C2 = whack::Array<double, 5> {
     1.0925484305920792f,
     -1.0925484305920792f,
     0.31539156525252005f,
     -1.0925484305920792f,
     0.5462742152960396f
 };
-constexpr auto SH_C3 = whack::Array<float, 7> {
+constexpr auto SH_C3 = whack::Array<double, 7> {
     -0.5900435899266435f,
     2.890611442640554f,
     -0.4570457994644658f,
