@@ -88,8 +88,8 @@ void check_weight_to_mass()
             return stroke::pack_tensor<scalar_t>(grad_outgoing);
         };
 
-        const auto test_data = stroke::pack_tensor<scalar_t>(rnd.uniform(), rnd.uniform3());
-        stroke::check_gradient(fun, fun_grad, test_data, scalar_t(0.000002), scalar_t(100)); // i think the gradient is correct, but a bit unstable.
+        const auto test_data = stroke::pack_tensor<scalar_t>(rnd.uniform() * 20.0, rnd.uniform3() * 20.0);
+        stroke::check_gradient(fun, fun_grad, test_data, scalar_t(0.000002));
     }
 }
 
@@ -253,22 +253,29 @@ void check_compute_cov()
     using quat_t = glm::qua<scalar_t>;
 
     whack::random::HostGenerator<scalar_t> rnd;
+    const auto fun = [](const whack::Tensor<scalar_t, 1>& input) {
+        const auto [scales, rotation] = stroke::extract<vec3_t, quat_t>(input);
+        const auto cov = dgmr::math::compute_cov<scalar_t>(scales, rotation);
+        return stroke::pack_tensor<scalar_t>(cov);
+    };
+
+    const auto fun_grad = [](const whack::Tensor<scalar_t, 1>& input, const whack::Tensor<scalar_t, 1>& grad_output) {
+        const auto [scales, rotation] = stroke::extract<vec3_t, quat_t>(input);
+        const auto grad_incoming = stroke::extract<cov3_t>(grad_output);
+        const auto [grad_scales, grad_rotation] = grad::compute_cov<scalar_t>(scales, rotation, grad_incoming);
+        return stroke::pack_tensor<scalar_t>(grad_scales, grad_rotation);
+    };
 
     for (int i = 0; i < 10; ++i) {
-        const auto fun = [](const whack::Tensor<scalar_t, 1>& input) {
-            const auto [scales, rotation] = stroke::extract<vec3_t, quat_t>(input);
-            const auto cov = dgmr::math::compute_cov<scalar_t>(scales, rotation);
-            return stroke::pack_tensor<scalar_t>(cov);
-        };
-
-        const auto fun_grad = [](const whack::Tensor<scalar_t, 1>& input, const whack::Tensor<scalar_t, 1>& grad_output) {
-            const auto [scales, rotation] = stroke::extract<vec3_t, quat_t>(input);
-            const auto grad_incoming = stroke::extract<cov3_t>(grad_output);
-            const auto [grad_scales, grad_rotation] = grad::compute_cov<scalar_t>(scales, rotation, grad_incoming);
-            return stroke::pack_tensor<scalar_t>(grad_scales, grad_rotation);
-        };
-
-        const auto test_data = stroke::pack_tensor<scalar_t>(rnd.uniform3(), stroke::host_random_quaternion<scalar_t>(&rnd));
+        const auto test_data = stroke::pack_tensor<scalar_t>(rnd.uniform3() * 10., stroke::host_random_quaternion<scalar_t>(&rnd));
+        stroke::check_gradient(fun, fun_grad, test_data, scalar_t(0.000001));
+    }
+    {
+        const auto test_data = stroke::pack_tensor<scalar_t>(rnd.uniform3() * 10., quat_t(1, 0, 0, 0));
+        stroke::check_gradient(fun, fun_grad, test_data, scalar_t(0.000001));
+    }
+    {
+        const auto test_data = stroke::pack_tensor<scalar_t>(rnd.uniform3() * 10., quat_t(0, 0, 0, 1));
         stroke::check_gradient(fun, fun_grad, test_data, scalar_t(0.000001));
     }
 }
