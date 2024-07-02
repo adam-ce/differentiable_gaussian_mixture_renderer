@@ -223,7 +223,7 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const whack::TensorView
                     }
 
                     // compute sampling
-                    const auto bin_borders = marching_steps::sample<config::n_small_steps>(sample_sections);
+                    const auto bin_borders = marching_steps::sample<config::n_small_steps, config::n_steps_per_gaussian>(sample_sections);
                     whack::Array<Vec4, config::n_small_steps - 1> bin_eval = {};
 
                     // Iterate over batches again, and compute samples

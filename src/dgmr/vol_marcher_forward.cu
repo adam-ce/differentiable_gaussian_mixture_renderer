@@ -389,7 +389,7 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<sca
                     }
 
                     // compute sampling
-                    const auto bin_borders = marching_steps::sample<config::n_small_steps>(sample_sections);
+                    const auto bin_borders = marching_steps::sample<config::n_small_steps, config::n_steps_per_gaussian>(sample_sections);
                     whack::Array<Vec4, config::n_small_steps - 1> bin_eval = {};
 
                     // float dbg_mass_in_bins_closeed = 0;

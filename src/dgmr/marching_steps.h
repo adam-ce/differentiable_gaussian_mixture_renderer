@@ -30,6 +30,15 @@ struct DensityEntry {
     scalar_t start;
     scalar_t end;
     scalar_t delta_t;
+    scalar_t g_start;
+
+
+    STROKE_DEVICES_INLINE DensityEntry() = default;
+
+    STROKE_DEVICES_INLINE DensityEntry(scalar_t start, scalar_t end, scalar_t delta_t)
+        : start(start), end(end), delta_t(delta_t), g_start(start)
+    {
+    }
 };
 
 template <unsigned max_size, typename scalar_t>
@@ -77,26 +86,37 @@ public:
             tmp[0].start = a.start;
             tmp[0].end = stroke::min(a.end, b.start);
             tmp[0].delta_t = a.delta_t;
+            tmp[0].g_start = a.g_start;
         } else {
             tmp[0].start = b.start;
             tmp[0].end = stroke::min(b.end, a.start);
             tmp[0].delta_t = b.delta_t;
+            tmp[0].g_start = b.g_start;
         }
         if (b.end < a.end) {
             assert(a.start < b.end);
             tmp[2].start = b.end; // stroke::max(b.end, a.start);
             tmp[2].end = a.end;
             tmp[2].delta_t = a.delta_t;
+            tmp[2].g_start = a.g_start;
         } else {
             assert(b.start < a.end); // otherwise
             tmp[2].start = a.end; // stroke::max(a.end, b.start);
             tmp[2].end = b.end;
             tmp[2].delta_t = b.delta_t;
+            tmp[2].g_start = b.g_start;
         }
         // overlapping
         tmp[1].start = tmp[0].end;
         tmp[1].end = tmp[2].start;
-        tmp[1].delta_t = stroke::min(a.delta_t, b.delta_t);
+        if (a.delta_t < b.delta_t) {
+            tmp[1].delta_t = a.delta_t;
+            tmp[1].g_start = a.g_start;
+        }
+        else {
+            tmp[1].delta_t = b.delta_t;
+            tmp[1].g_start = b.g_start;
+        }
         return tmp;
     }
 
@@ -199,7 +219,7 @@ public:
     }
 };
 
-template <unsigned n_samples, unsigned n_density_sections, typename scalar_t>
+template <unsigned n_samples, unsigned n_samples_per_gaussian, unsigned n_density_sections, typename scalar_t>
 STROKE_DEVICES_INLINE whack::Array<scalar_t, n_samples> sample(const DensityArray<n_density_sections, scalar_t>& densities)
 {
     if (densities.size() == 0)

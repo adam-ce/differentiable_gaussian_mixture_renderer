@@ -40,7 +40,7 @@ TEST_CASE("dgmr marching step DensityArray sampler")
     SECTION("empty")
     {
         dgmr::marching_steps::DensityArray<4, float> arr(0.1f);
-        const auto samples = dgmr::marching_steps::sample<16>(arr);
+        const auto samples = dgmr::marching_steps::sample<32, 10>(arr);
         for (auto i = 0u; i < samples.size(); ++i) {
             CHECK(samples[i] == 0);
         }
@@ -48,14 +48,15 @@ TEST_CASE("dgmr marching step DensityArray sampler")
 
     SECTION("filled")
     {
-        dgmr::marching_steps::DensityArray<4, float> arr(0.1f);
-        arr.put({ 0.2f, 1.0f, 0.1f });
-        arr.put({ 1.0f, 2.0f, 0.2f });
-        arr.put({ 2.0f, 2.5f, 0.5f });
-        arr.put({ 3.0f, 4.0f, 1.0f });
+        dgmr::marching_steps::DensityArray<8, float> arr(0.1f);
+        arr.put({ 0.2f, 1.2f, 0.1f });
+        arr.put({ 1.0f, 3.0f, 0.2f });
+        arr.put({ 0.0f, 2.5f, 0.25f });
+        arr.put({ 2.0f, 2.5f, 0.05f });
+        arr.put({ 5.0f, 15.5f, 1.0f });
 
-        const auto samples = dgmr::marching_steps::sample<16>(arr);
-        CHECK(samples.front() == 0.2f);
+        const auto samples = dgmr::marching_steps::sample<32, 10>(arr);
+        CHECK(samples.front() >= 0.1f);
         for (auto i = 1u; i < samples.size(); ++i) {
             const auto delta_t = samples[i] - samples[i - 1];
             CHECK(delta_t > 0);
@@ -947,23 +948,26 @@ TEMPLATE_TEST_CASE("dgmr marching step DensityArray", "", float, double)
             dgmr::marching_steps::DensityArray<8, scalar_t> arr(smallest);
             std::vector<dgmr::marching_steps::DensityEntry<scalar_t>> entries;
 
-            const auto get_real_delta_t_at = [&](scalar_t t) {
+            const auto get_real_g_at = [&](scalar_t t) {
                 auto delta_t = scalar_t(1) / scalar_t(0);
+                auto g_start = scalar_t(0);
                 for (const auto& e : entries) {
-                    if (e.start <= t && t < e.end)
-                        delta_t = stroke::min(delta_t, e.delta_t);
+                    if (e.start <= t && t < e.end && e.delta_t < delta_t) {
+                        delta_t = e.delta_t;
+                        g_start = e.g_start;
+                    }
                 }
-                return delta_t;
+                return std::make_pair(g_start, delta_t);
             };
 
-            const auto get_computed_delta_t_at = [&](scalar_t t) {
+            const auto get_computed_g_at = [&](scalar_t t) {
                 for (auto i = 0u; i < arr.size(); ++i) {
                     const auto& e = arr[i];
                     if (e.start <= t && t < e.end) {
-                        return e.delta_t;
+                        return std::make_pair(e.g_start, e.delta_t);
                     }
                 }
-                return scalar_t(1) / scalar_t(0);
+                return std::make_pair(scalar_t(0), scalar_t(1) / scalar_t(0));
             };
 
             for (auto j = 0u; j < 100; ++j) {
@@ -992,10 +996,11 @@ TEMPLATE_TEST_CASE("dgmr marching step DensityArray", "", float, double)
                     continue;
                 for (auto l = 0u; l < 50; ++l) {
                     const auto t = r() * (arr[arr.size() - 1].end - smallest - 0.00001f) + smallest;
-                    const auto r = get_real_delta_t_at(t);
-                    const auto c = get_computed_delta_t_at(t);
+                    const auto r = get_real_g_at(t);
+                    const auto c = get_computed_g_at(t);
                     // if (c != r)
-                    CHECK(get_real_delta_t_at(t) == get_computed_delta_t_at(t));
+                    CHECK(c.first == r.first);
+                    CHECK(c.second == r.second);
                 }
             }
         }
