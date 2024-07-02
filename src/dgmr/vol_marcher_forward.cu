@@ -122,7 +122,6 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<sca
                 const auto rotation = data.gm_cov_rotations(idx);
                 const auto dist = glm::length(data.cam_poition - centroid);
 
-                const auto screen_space_gaussian = math::splat<vol_marcher::config::gaussian_mixture_formulation>(weight, centroid, scales, rotation, camera, scalar_t(config::filter_kernel_SD * config::filter_kernel_SD));
 
                 const auto cov3d = math::compute_cov(scales, rotation);
 
@@ -136,6 +135,7 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<sca
 
                 // using the more aggressive computation for calculating overlapping tiles:
                 {
+                    const auto screen_space_gaussian = math::splat<vol_marcher::config::gaussian_mixture_formulation>(weight, centroid, scales, rotation, camera, scalar_t(config::filter_kernel_SD * config::filter_kernel_SD));
                     // get exact distance to 1./255. isoline
                     const auto isoline_distance = [](scalar_t w, scalar_t variance, scalar_t isoline) {
                         // solve w * gaussian(x, sd) == isoline for x
