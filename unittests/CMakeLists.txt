@@ -20,6 +20,7 @@ add_executable(dgmr_unittests
     unit_test_utils.h
     piecewise_linear.cpp
     marching_steps.cpp
+    grad_marching_steps.cu
     grad_inria_splatter_render.cu
 )
 

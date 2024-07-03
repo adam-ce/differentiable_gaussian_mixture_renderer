@@ -37,6 +37,27 @@ TEST_CASE("dgmr marching step DensityArray sampler")
         return 1.0f / 0.0f;
     };
 
+    SECTION("next sample")
+    {
+        dgmr::marching_steps::DensityEntry<float> entry { 0.2f, 1.2f, 0.1f };
+        CHECK(dgmr::marching_steps::next_sample(entry, 0.0f) == Approx(0.2));
+        CHECK(dgmr::marching_steps::next_sample(entry, 0.1f) == Approx(0.2));
+        CHECK(dgmr::marching_steps::next_sample(entry, 0.195f) == Approx(0.2));
+        CHECK(dgmr::marching_steps::next_sample(entry, 0.205f) == Approx(0.3));
+        CHECK(dgmr::marching_steps::next_sample(entry, 0.795f) == Approx(0.8));
+        CHECK(dgmr::marching_steps::next_sample(entry, 0.805f) == Approx(0.9));
+        CHECK(dgmr::marching_steps::next_sample(entry, 1.195f) == Approx(1.2));
+
+        // const auto samples = dgmr::marching_steps::sample<32, 10>(arr);
+        // CHECK(samples.front() >= 0.1f);
+        // for (auto i = 1u; i < samples.size(); ++i) {
+        //     const auto delta_t = samples[i] - samples[i - 1];
+        //     CHECK(delta_t > 0);
+        //     for (auto t = samples[i - 1]; t < samples[i]; t += 0.01f)
+        //         CHECK(delta_t <= target_delta_t_at(arr, t) + 0.001f);
+        // }
+    }
+
     SECTION("empty")
     {
         dgmr::marching_steps::DensityArray<4, float> arr(0.1f);
@@ -59,9 +80,39 @@ TEST_CASE("dgmr marching step DensityArray sampler")
         CHECK(samples.front() >= 0.1f);
         for (auto i = 1u; i < samples.size(); ++i) {
             const auto delta_t = samples[i] - samples[i - 1];
-            CHECK(delta_t > 0);
+            CHECK(delta_t >= 0);
             for (auto t = samples[i - 1]; t < samples[i]; t += 0.01f)
                 CHECK(delta_t <= target_delta_t_at(arr, t) + 0.001f);
+        }
+    }
+
+    SECTION("random")
+    {
+        using scalar_t = float;
+        using DensityArray = dgmr::marching_steps::DensityArray<8, scalar_t>;
+        constexpr auto n_samples = 16u;
+        constexpr auto n_samples_per_g = 10;
+        std::srand(0);
+        const auto r = []() {
+            return scalar_t(std::rand()) / scalar_t(RAND_MAX);
+        };
+        for (auto i = 0u; i < 4; ++i) {
+            const auto smallest = r();
+            DensityArray arr(smallest);
+            for (auto j = 0u; j < 50; ++j) {
+                const auto start = r() * scalar_t(10.0);
+                const auto end = start + r();
+                arr.put({ start, end, (end - start) / (n_samples_per_g - 1) });
+
+                const auto samples = dgmr::marching_steps::sample<n_samples, n_samples_per_g>(arr);
+                CHECK(samples.front() >= smallest);
+                for (auto i = 1u; i < samples.size(); ++i) {
+                    const auto delta_t = samples[i] - samples[i - 1];
+                    CHECK(delta_t >= 0);
+                    for (auto t = samples[i - 1]; t < samples[i]; t += 0.01f)
+                        CHECK(delta_t <= target_delta_t_at(arr, t) + 0.001f);
+                }
+            }
         }
     }
 }

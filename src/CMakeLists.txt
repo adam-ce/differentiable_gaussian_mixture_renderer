@@ -43,7 +43,7 @@ add_library(differentiable_gaussian_mixture_renderer
     dgmr/piecewise_linear.h
     dgmr/raster_bin_sizers.h
     dgmr/types.h
-    dgmr/marching_steps.h
+    dgmr/marching_steps.h dgmr/grad/marching_steps.h
     dgmr/sibr_interfaces.h dgmr/sibr_interfaces.cpp
     dgmr/vol_marcher.h
     dgmr/util.h

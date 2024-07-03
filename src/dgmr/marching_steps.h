@@ -53,6 +53,12 @@ public:
         : m_start(start)
     {
     }
+    STROKE_DEVICES_INLINE DensityArray()
+        : m_start(0)
+        , m_end(0)
+        , m_data({})
+    {
+    }
     STROKE_DEVICES_INLINE unsigned size() const
     {
         return m_size;
@@ -218,6 +224,14 @@ public:
             m_end = stroke::min(m_end, m_data[m_size - 1].end);
     }
 };
+template <typename scalar_t>
+STROKE_DEVICES_INLINE scalar_t next_sample(const DensityEntry<scalar_t>& density, scalar_t t)
+{
+    if (t < density.g_start)
+        return density.g_start;
+    unsigned n_steps = stroke::ceil((t - density.g_start) / density.delta_t);
+    return density.g_start + n_steps * density.delta_t;
+}
 
 template <unsigned n_samples, unsigned n_samples_per_gaussian, unsigned n_density_sections, typename scalar_t>
 STROKE_DEVICES_INLINE whack::Array<scalar_t, n_samples> sample(const DensityArray<n_density_sections, scalar_t>& densities)
@@ -226,14 +240,23 @@ STROKE_DEVICES_INLINE whack::Array<scalar_t, n_samples> sample(const DensityArra
         return {};
 
     whack::Array<scalar_t, n_samples> samples;
-    samples[0] = densities[0].start;
     unsigned current_density_index = 0;
-    for (auto i = 1u; i < samples.size(); ++i) {
-        const auto sample = stroke::min(densities[current_density_index].end, samples[i - 1] + densities[current_density_index].delta_t);
-        samples[i] = sample;
-        if (current_density_index < densities.size() - 1 && sample == densities[current_density_index].end) {
+    scalar_t last_sample = densities.start() - densities[current_density_index].delta_t / 2;
+    for (auto i = 0u; i < samples.size(); ++i) {
+        auto sample = next_sample(densities[current_density_index], last_sample + densities[current_density_index].delta_t / 2);
+        while (sample > densities[current_density_index].end) {
             ++current_density_index;
+            if (current_density_index >= densities.size())
+                break;
+            sample = next_sample(densities[current_density_index], densities[current_density_index].start);
         }
+        if (current_density_index >= densities.size()) {
+            for (; i < samples.size(); ++i)
+                samples[i] = last_sample;
+            break;
+        }
+        samples[i] = sample;
+        last_sample = sample;
     }
 
     return samples;
