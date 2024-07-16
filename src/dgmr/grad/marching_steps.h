@@ -25,9 +25,19 @@
 
 #include "../marching_steps.h"
 
-
 namespace dgmr::marching_steps::grad {
 
+template <typename scalar_t>
+STROKE_DEVICES_INLINE DensityEntry<scalar_t> next_sample(const DensityEntry<scalar_t>& density, scalar_t t, scalar_t incoming_grad)
+{
+    DensityEntry<scalar_t> gd = {};
+    gd.g_start = incoming_grad;
+    if (t < density.g_start)
+        return gd;
+    unsigned n_steps = stroke::ceil((t - density.g_start) / density.delta_t);
+    gd.delta_t = n_steps * incoming_grad;
+    return gd;
+}
 
 template <unsigned n_samples, unsigned n_samples_per_gaussian, unsigned n_density_sections, typename scalar_t>
 STROKE_DEVICES_INLINE DensityArray<n_density_sections, scalar_t> sample(const DensityArray<n_density_sections, scalar_t>& densities, const whack::Array<scalar_t, n_samples>& incoming_grad)
