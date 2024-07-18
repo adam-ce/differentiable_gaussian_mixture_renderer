@@ -1503,3 +1503,5 @@ TEST_CASE("dgmr marching step bins")
         CHECK(bins.end_of(5) == Approx(0.0));
     }
 }
+
+using namespace dgmr::marching_steps;

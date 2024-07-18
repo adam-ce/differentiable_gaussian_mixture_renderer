@@ -32,11 +32,13 @@ struct DensityEntry {
     scalar_t delta_t;
     scalar_t g_start;
 
-
     STROKE_DEVICES_INLINE DensityEntry() = default;
 
     STROKE_DEVICES_INLINE DensityEntry(scalar_t start, scalar_t end, scalar_t delta_t)
-        : start(start), end(end), delta_t(delta_t), g_start(start)
+        : start(start)
+        , end(end)
+        , delta_t(delta_t)
+        , g_start(start)
     {
     }
 };
@@ -62,6 +64,16 @@ public:
     STROKE_DEVICES_INLINE unsigned size() const
     {
         return m_size;
+    }
+    STROKE_DEVICES_INLINE void set_size(unsigned int size)
+    {
+        m_size = size;
+    }
+    STROKE_DEVICES_INLINE void reset_non_differentiable_values(unsigned int size, scalar_t start, scalar_t end)
+    {
+        m_size = size;
+        m_start = start;
+        m_end = end;
     }
     STROKE_DEVICES_INLINE scalar_t start() const
     {
@@ -229,7 +241,11 @@ STROKE_DEVICES_INLINE scalar_t next_sample(const DensityEntry<scalar_t>& density
 {
     if (t < density.g_start)
         return density.g_start;
+    // const unsigned n_steps = stroke::ceil((t - density.g_start) / density.delta_t);
+
+    const auto tmp = (t - density.g_start) / density.delta_t;
     unsigned n_steps = stroke::ceil((t - density.g_start) / density.delta_t);
+
     return density.g_start + n_steps * density.delta_t;
 }
 
@@ -241,7 +257,7 @@ STROKE_DEVICES_INLINE whack::Array<scalar_t, n_samples> sample(const DensityArra
 
     whack::Array<scalar_t, n_samples> samples;
     unsigned current_density_index = 0;
-    scalar_t last_sample = densities.start() - densities[current_density_index].delta_t / 2;
+    scalar_t last_sample = densities.start() - densities[0].delta_t / 2;
     for (auto i = 0u; i < samples.size(); ++i) {
         auto sample = next_sample(densities[current_density_index], last_sample + densities[current_density_index].delta_t / 2);
         while (sample > densities[current_density_index].end) {
@@ -251,10 +267,12 @@ STROKE_DEVICES_INLINE whack::Array<scalar_t, n_samples> sample(const DensityArra
             sample = next_sample(densities[current_density_index], densities[current_density_index].start);
         }
         if (current_density_index >= densities.size()) {
+            assert(last_sample > densities.start()); // no samples produced
             for (; i < samples.size(); ++i)
                 samples[i] = last_sample;
             break;
         }
+        assert(sample > densities.start()); // no samples produced
         samples[i] = sample;
         last_sample = sample;
     }

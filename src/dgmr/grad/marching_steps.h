@@ -47,25 +47,41 @@ STROKE_DEVICES_INLINE DensityArray<n_density_sections, scalar_t> sample(const De
     if (densities.size() == 0)
         return grad_densities;
 
-    // unsigned current_density_index = 0;
-    // scalar_t last_sample = densities.start() - densities[current_density_index].delta_t / 2;
-    // for (auto i = 0u; i < incoming_grad.size(); ++i) {
-    //     auto sample = next_sample(densities[current_density_index], last_sample + densities[current_density_index].delta_t / 2);
-    //     while (sample > densities[current_density_index].end) {
-    //         ++current_density_index;
-    //         if (current_density_index >= n_density_sections)
-    //             break;
-    //         sample = next_sample(densities[current_density_index], densities[current_density_index].start);
-    //     }
-    //     if (current_density_index >= n_density_sections) {
-    //         samples[i] = last_sample;
-    //         continue;
-    //     }
-    //     samples[i] = sample;
-    //     last_sample = sample;
-    // }
+    grad_densities.set_size(densities.size());
+
+    whack::Array<scalar_t, n_samples> samples;
+    unsigned current_density_index = 0;
+    scalar_t last_sample = densities.start() - densities[current_density_index].delta_t / 2;
+    scalar_t last_sample_t = last_sample + densities[current_density_index].delta_t / 2;
+    for (auto i = 0u; i < samples.size(); ++i) {
+        auto sample_t = last_sample + densities[current_density_index].delta_t / 2;
+        auto sample = next_sample(densities[current_density_index], sample_t);
+        while (sample > densities[current_density_index].end) {
+            ++current_density_index;
+            if (current_density_index >= densities.size())
+                break;
+            sample_t = densities[current_density_index].start;
+            sample = next_sample(densities[current_density_index], sample_t);
+        }
+        if (current_density_index >= densities.size()) {
+            scalar_t total_grad = 0;
+            for (auto j = i; j < samples.size(); ++j)
+                total_grad += incoming_grad[j];
+
+            const auto tmp = grad::next_sample(densities[densities.size() - 1], last_sample_t, total_grad);
+            grad_densities[densities.size() - 1].g_start += tmp.g_start;
+            grad_densities[densities.size() - 1].delta_t += tmp.delta_t;
+            break;
+        }
+        // samples[i] = sample;
+        const auto tmp = grad::next_sample(densities[current_density_index], sample_t, incoming_grad[i]);
+        grad_densities[current_density_index].g_start += tmp.g_start;
+        grad_densities[current_density_index].delta_t += tmp.delta_t;
+        last_sample = sample;
+        last_sample_t = sample_t;
+    }
 
     return grad_densities;
 }
 
-} // namespace dgmr::marching_steps
+} // namespace dgmr::marching_steps::grad
