@@ -553,7 +553,7 @@ integrate_bins(glm::vec<3, scalar_t> current_colour, scalar_t current_transparen
 }
 
 template <typename scalar_t, unsigned N>
-STROKE_DEVICES_INLINE stroke::grad::FourGrads<scalar_t, glm::vec<3, scalar_t>, glm::vec<3, scalar_t>, stroke::Cov3<scalar_t>>
+STROKE_DEVICES_INLINE stroke::grad::FiveGrads<scalar_t, glm::vec<3, scalar_t>, glm::vec<3, scalar_t>, stroke::Cov3<scalar_t>, whack::Array<scalar_t, N>>
 sample_gaussian(const scalar_t mass, const glm::vec<3, scalar_t>& rgb, const glm::vec<3, scalar_t>& position, const stroke::Cov3<scalar_t>& inv_cov,
     const stroke::Ray<3, scalar_t>& ray, const whack::Array<scalar_t, N>& bin_borders, const whack::Array<glm::vec<4, scalar_t>, N - 1>& grad_incoming)
 {
@@ -582,6 +582,7 @@ sample_gaussian(const scalar_t mass, const glm::vec<3, scalar_t>& rgb, const glm
     scalar_t grad_inv_sd = 0;
     scalar_t grad_mass_on_ray = 0;
     vec3 grad_rgb = {};
+    whack::Array<scalar_t, N> grad_bin_borders = {};
     auto cdf_start = gaussian::cdf_inv_SD(centroid, inv_sd, bin_borders[0]);
     for (auto k = 0u; k < bin_borders.size() - 1; ++k) {
         // const auto cdf_start = gaussian::cdf_inv_SD(centroid, inv_sd, bin_borders[k]);
@@ -602,8 +603,8 @@ sample_gaussian(const scalar_t mass, const glm::vec<3, scalar_t>& rgb, const glm
         const auto grad_cdf_delta = grad_mass_in_bin * mass_on_ray;
         const auto grad_cdf_start = -grad_cdf_delta;
         const auto grad_cdf_end = grad_cdf_delta;
-        stroke::grad::gaussian::cdf_inv_SD(centroid, inv_sd, bin_borders[k], grad_cdf_start).addTo(&grad_centroid, &grad_inv_sd, nullptr);
-        stroke::grad::gaussian::cdf_inv_SD(centroid, inv_sd, bin_borders[k + 1], grad_cdf_end).addTo(&grad_centroid, &grad_inv_sd, nullptr);
+        stroke::grad::gaussian::cdf_inv_SD(centroid, inv_sd, bin_borders[k], grad_cdf_start).addTo(&grad_centroid, &grad_inv_sd, &grad_bin_borders[k]);
+        stroke::grad::gaussian::cdf_inv_SD(centroid, inv_sd, bin_borders[k + 1], grad_cdf_end).addTo(&grad_centroid, &grad_inv_sd, &grad_bin_borders[k + 1]);
     }
 
     const auto grad_gaussian1d_weight = grad_mass_on_ray * mass;
@@ -612,7 +613,7 @@ sample_gaussian(const scalar_t mass, const glm::vec<3, scalar_t>& rgb, const glm
     const auto grad_variance = stroke::grad::sqrt(variance, grad_sd);
     const auto grad_gaussian3d_and_ray = stroke::grad::gaussian::intersect_with_ray_inv_C(position, inv_cov, ray, { grad_gaussian1d_weight, grad_centroid, grad_variance });
 
-    return { grad_mass, grad_rgb, grad_gaussian3d_and_ray.m_left, grad_gaussian3d_and_ray.m_middle }; // grad for ray is unused
+    return { grad_mass, grad_rgb, grad_gaussian3d_and_ray.m_left, grad_gaussian3d_and_ray.m_middle, grad_bin_borders }; // grad for ray is unused
 }
 
 } // namespace dgmr::math::grad

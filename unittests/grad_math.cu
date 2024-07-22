@@ -769,20 +769,20 @@ TEST_CASE("dgmr sample_gaussian grad")
         const auto bin_borders = gen_sampling();
 
         const auto fun = [&](const whack::Tensor<scalar_t, 1>& input) {
-            const auto [g_weight, rgb, g_pos, g_cov] = stroke::extract<scalar_t, vec3_t, vec3_t, cov3_t>(input);
+            const auto [g_weight, rgb, g_pos, g_cov, bin_borders] = stroke::extract<scalar_t, vec3_t, vec3_t, cov3_t, whack::Array<scalar_t, n_bins + 1>>(input);
             whack::Array<vec4_t, n_bins> samples = {};
             dgmr::math::sample_gaussian(g_weight, rgb, g_pos, g_cov, ray, bin_borders, &samples);
             return stroke::pack_tensor<scalar_t>(samples);
         };
 
         const auto fun_grad = [&](const whack::Tensor<scalar_t, 1>& input, const whack::Tensor<scalar_t, 1>& grad_output) {
-            const auto [g_weight, rgb, g_pos, g_cov] = stroke::extract<scalar_t, vec3_t, vec3_t, cov3_t>(input);
+            const auto [g_weight, rgb, g_pos, g_cov, bin_borders] = stroke::extract<scalar_t, vec3_t, vec3_t, cov3_t, whack::Array<scalar_t, n_bins + 1>>(input);
             const auto grad_incoming = stroke::extract<whack::Array<vec4_t, n_bins>>(grad_output);
             const auto grad_outgoing = dgmr::math::grad::sample_gaussian(g_weight, rgb, g_pos, g_cov, ray, bin_borders, grad_incoming);
             return stroke::pack_tensor<scalar_t>(grad_outgoing);
         };
 
-        const auto test_data = stroke::pack_tensor<scalar_t>(g_weight, rgb, g_pos, g_cov);
+        const auto test_data = stroke::pack_tensor<scalar_t>(g_weight, rgb, g_pos, g_cov, bin_borders);
         stroke::check_gradient(fun, fun_grad, test_data, scalar_t(0.000001));
     }
 }
