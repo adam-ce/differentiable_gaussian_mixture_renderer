@@ -27,6 +27,7 @@ namespace dgmr::marching_steps {
 
 template<typename scalar_t>
 struct DensityEntry {
+    int gaussian_id;
     scalar_t start;
     scalar_t end;
     scalar_t delta_t;
@@ -34,8 +35,9 @@ struct DensityEntry {
 
     STROKE_DEVICES_INLINE DensityEntry() = default;
 
-    STROKE_DEVICES_INLINE DensityEntry(scalar_t start, scalar_t end, scalar_t delta_t)
-        : start(start)
+    STROKE_DEVICES_INLINE DensityEntry(int gaussian_id, scalar_t start, scalar_t end, scalar_t delta_t)
+        : gaussian_id(gaussian_id)
+        , start(start)
         , end(end)
         , delta_t(delta_t)
         , g_start(start)
@@ -241,11 +243,8 @@ STROKE_DEVICES_INLINE scalar_t next_sample(const DensityEntry<scalar_t>& density
 {
     if (t < density.g_start)
         return density.g_start;
-    // const unsigned n_steps = stroke::ceil((t - density.g_start) / density.delta_t);
 
-    const auto tmp = (t - density.g_start) / density.delta_t;
-    unsigned n_steps = stroke::ceil((t - density.g_start) / density.delta_t);
-
+    const unsigned n_steps = stroke::ceil((t - density.g_start) / density.delta_t);
     return density.g_start + n_steps * density.delta_t;
 }
 
@@ -267,12 +266,13 @@ STROKE_DEVICES_INLINE whack::Array<scalar_t, n_samples> sample(const DensityArra
             sample = next_sample(densities[current_density_index], densities[current_density_index].start);
         }
         if (current_density_index >= densities.size()) {
-            assert(last_sample > densities.start()); // no samples produced
+            assert(last_sample >= densities.start()); // no samples produced
+
             for (; i < samples.size(); ++i)
                 samples[i] = last_sample;
             break;
         }
-        assert(sample > densities.start()); // no samples produced
+        assert(sample >= densities.start()); // no samples produced
         samples[i] = sample;
         last_sample = sample;
     }

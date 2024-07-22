@@ -218,7 +218,7 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const whack::TensorView
                             const scalar_t end = gaussian1d.centre + sd * config::gaussian_relevance_sigma;
                             const scalar_t delta_t = (sd * config::gaussian_relevance_sigma * 2) / (config::n_steps_per_gaussian - 1);
 
-                            sample_sections.put({ start, end, delta_t });
+                            sample_sections.put({ collected_id[j], start, end, delta_t });
                         }
                     }
 

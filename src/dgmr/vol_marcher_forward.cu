@@ -388,7 +388,7 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<sca
                             // mathematically the same as the following line, but numerically different:
                             // const scalar_t end = gaussian1d.centre + sd * config::gaussian_relevance_sigma;
 
-                            sample_sections.put({ start, end, delta_t });
+                            sample_sections.put({ collected_id[j], start, end, delta_t });
                         }
                     }
 

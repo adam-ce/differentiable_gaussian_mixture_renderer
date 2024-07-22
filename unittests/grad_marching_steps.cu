@@ -50,7 +50,7 @@ TEST_CASE("dgmr grad marching steps next sample")
 
         const auto fun = [=](const whack::Tensor<scalar_t, 1>& input) {
             const auto [g_start, delta_t] = stroke::extract<scalar_t, scalar_t>(input);
-            DensityEntry<scalar_t> d { current_start, current_end, delta_t };
+            DensityEntry<scalar_t> d { 0, current_start, current_end, delta_t };
             d.g_start = g_start;
             const auto sample = dgmr::marching_steps::next_sample<scalar_t>(d, t);
             return stroke::pack_tensor<scalar_t>(sample);
@@ -58,7 +58,7 @@ TEST_CASE("dgmr grad marching steps next sample")
 
         const auto fun_grad = [=](const whack::Tensor<scalar_t, 1>& input, const whack::Tensor<scalar_t, 1>& grad_output) {
             const auto [g_start, delta_t] = stroke::extract<scalar_t, scalar_t>(input);
-            DensityEntry<scalar_t> d { current_start, current_end, delta_t };
+            DensityEntry<scalar_t> d { 0, current_start, current_end, delta_t };
             d.g_start = g_start;
 
             const auto grad_sample = stroke::extract<scalar_t>(grad_output);
@@ -90,7 +90,7 @@ TEST_CASE("dgmr grad marching steps sample")
         for (auto j = 0u; j < 50; ++j) {
             const auto start = r() * scalar_t(10.0);
             const auto end = start + r();
-            arr.put({ start, end, (end - start) / (n_samples_per_g - 1) });
+            arr.put({ 0, start, end, (end - start) / (n_samples_per_g - 1) });
 
             auto arr_prime = arr;
             arr_prime.reset_non_differentiable_values(arr.size(), smallest + 0.0000015, arr.end());
@@ -108,6 +108,7 @@ TEST_CASE("dgmr grad marching steps sample")
                 for (auto i = 0u; i < arr_prime.size(); ++i) {
                     // arr_prime[i].start = stroke::min(arr[i].start, arr_prime[i].g_start);
                     // arr_prime[i].end = stroke::max(arr[i].end, arr_prime[i].g_start + n_samples_per_g * arr_prime[i].delta_t);
+                    arr_pp[i].gaussian_id = 0;
                     arr_pp[i].start = arr_prime[i].start;
                     arr_pp[i].end = arr_prime[i].end;
                 }
