@@ -55,8 +55,8 @@ struct ForwardData {
 
 struct config {
     static constexpr float filter_kernel_SD = 0.55f;
-    static constexpr unsigned n_large_steps = 16;
-    static constexpr unsigned n_small_steps = 128;
+    static constexpr unsigned n_densities_per_batch = 16;
+    static constexpr unsigned n_bins_per_batch = 128;
     static constexpr unsigned n_steps_per_gaussian = 32;
     static constexpr float transmission_threshold = 0.005f;
     static constexpr float gaussian_relevance_sigma = 3.f;

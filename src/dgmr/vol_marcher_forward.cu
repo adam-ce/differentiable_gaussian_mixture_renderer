@@ -336,7 +336,7 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<sca
 
                 while (large_stepping_ongoing) {
                     // Iterate over all gaussians and compute sample_sections
-                    marching_steps::DensityArray<config::n_large_steps, scalar_t> sample_sections(current_large_step_start);
+                    marching_steps::DensityArray<config::n_densities_per_batch, scalar_t> sample_sections(current_large_step_start);
                     n_toDo = render_g_range.y - render_g_range.x;
                     bool done_1 = !inside;
                     for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {
@@ -393,8 +393,8 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<sca
                     }
 
                     // compute sampling
-                    const auto bin_borders = marching_steps::sample<config::n_small_steps, config::n_steps_per_gaussian>(sample_sections);
-                    whack::Array<Vec4, config::n_small_steps - 1> bin_eval = {};
+                    const auto bin_borders = marching_steps::sample<config::n_bins_per_batch, config::n_steps_per_gaussian>(sample_sections);
+                    whack::Array<Vec4, config::n_bins_per_batch - 1> bin_eval = {};
 
                     // float dbg_mass_in_bins_closeed = 0;
                     // float dbg_mass_in_bins_numerik_1 = 0;
