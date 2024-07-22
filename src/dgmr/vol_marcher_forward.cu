@@ -381,8 +381,12 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<sca
                                 continue;
 
                             const scalar_t start = gaussian1d.centre - sd * config::gaussian_relevance_sigma;
-                            const scalar_t end = gaussian1d.centre + sd * config::gaussian_relevance_sigma;
                             const scalar_t delta_t = (sd * config::gaussian_relevance_sigma * 2) / (config::n_steps_per_gaussian - 1);
+
+                            // use the same numerical calculation as in the bounds check in marching_steps::sample
+                            const scalar_t end = start + (config::n_steps_per_gaussian - 1) * delta_t;
+                            // mathematically the same as the following line, but numerically different:
+                            // const scalar_t end = gaussian1d.centre + sd * config::gaussian_relevance_sigma;
 
                             sample_sections.put({ start, end, delta_t });
                         }

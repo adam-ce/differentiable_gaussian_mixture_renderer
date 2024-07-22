@@ -64,6 +64,8 @@ STROKE_DEVICES_INLINE DensityArray<n_density_sections, scalar_t> sample(const De
             sample = next_sample(densities[current_density_index], sample_t);
         }
         if (current_density_index >= densities.size()) {
+            assert(sample >= densities.start()); // no samples produced
+
             scalar_t total_grad = 0;
             for (auto j = i; j < samples.size(); ++j)
                 total_grad += incoming_grad[j];
@@ -74,6 +76,8 @@ STROKE_DEVICES_INLINE DensityArray<n_density_sections, scalar_t> sample(const De
             break;
         }
         // samples[i] = sample;
+        assert(sample >= densities.start()); // no samples produced
+
         const auto tmp = grad::next_sample(densities[current_density_index], sample_t, incoming_grad[i]);
         grad_densities[current_density_index].g_start += tmp.g_start;
         grad_densities[current_density_index].delta_t += tmp.delta_t;
