@@ -16,6 +16,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *****************************************************************************/
 
+#include "grad/marching_steps.h"
 #include "vol_marcher_backward.h"
 
 #include <cub/cub.cuh>
@@ -215,8 +216,12 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const whack::TensorView
                                 continue;
 
                             const scalar_t start = gaussian1d.centre - sd * config::gaussian_relevance_sigma;
-                            const scalar_t end = gaussian1d.centre + sd * config::gaussian_relevance_sigma;
                             const scalar_t delta_t = (sd * config::gaussian_relevance_sigma * 2) / (config::n_steps_per_gaussian - 1);
+
+                            // use the same numerical calculation as in the bounds check in marching_steps::sample
+                            const scalar_t end = start + (config::n_steps_per_gaussian - 1) * delta_t;
+                            // mathematically the same as the following line, but numerically different:
+                            // const scalar_t end = gaussian1d.centre + sd * config::gaussian_relevance_sigma;
 
                             sample_sections.put({ collected_id[j], start, end, delta_t });
                         }
@@ -224,6 +229,7 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const whack::TensorView
 
                     // compute sampling
                     const auto bin_borders = marching_steps::sample<config::n_small_steps, config::n_steps_per_gaussian>(sample_sections);
+                    whack::Array<scalar_t, config::n_small_steps> grad_bin_borders = {};
                     whack::Array<Vec4, config::n_small_steps - 1> bin_eval = {};
 
                     // Iterate over batches again, and compute samples
@@ -285,21 +291,57 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const whack::TensorView
                         // Iterate over current batch
                         for (unsigned j = 0; j < stroke::min(render_block_size, n_toDo); j++) {
                             // math::sample_gaussian(collected_3d_masses[j], g_rgb(collected_id[j]), collected_centroid[j], collected_inv_cov3[j], ray, bin_borders, &bin_eval);
-                            const auto grad_weight_rgb_pos_cov = dgmr::math::grad::sample_gaussian(collected_3d_masses[j], g_rgb(collected_id[j]), collected_centroid[j], collected_inv_cov3[j], ray, bin_borders, grad_bin_eval);
+                            const auto sample_gaussian_grads = dgmr::math::grad::sample_gaussian(collected_3d_masses[j], g_rgb(collected_id[j]), collected_centroid[j], collected_inv_cov3[j], ray, bin_borders, grad_bin_eval);
                             const auto gaussian_id = collected_id[j];
-                            atomicAdd(&grad_g_filtered_masses(gaussian_id), grad_weight_rgb_pos_cov.m_first);
+                            atomicAdd(&grad_g_filtered_masses(gaussian_id), sample_gaussian_grads.m_first);
 
-                            atomicAdd(&grad_g_rgb(gaussian_id).x, grad_weight_rgb_pos_cov.m_second.x);
-                            atomicAdd(&grad_g_rgb(gaussian_id).y, grad_weight_rgb_pos_cov.m_second.y);
-                            atomicAdd(&grad_g_rgb(gaussian_id).z, grad_weight_rgb_pos_cov.m_second.z);
+                            atomicAdd(&grad_g_rgb(gaussian_id).x, sample_gaussian_grads.m_second.x);
+                            atomicAdd(&grad_g_rgb(gaussian_id).y, sample_gaussian_grads.m_second.y);
+                            atomicAdd(&grad_g_rgb(gaussian_id).z, sample_gaussian_grads.m_second.z);
 
-                            atomicAdd(&grad_gm_centroids(gaussian_id).x, grad_weight_rgb_pos_cov.m_third.x);
-                            atomicAdd(&grad_gm_centroids(gaussian_id).y, grad_weight_rgb_pos_cov.m_third.y);
-                            atomicAdd(&grad_gm_centroids(gaussian_id).z, grad_weight_rgb_pos_cov.m_third.z);
+                            atomicAdd(&grad_gm_centroids(gaussian_id).x, sample_gaussian_grads.m_third.x);
+                            atomicAdd(&grad_gm_centroids(gaussian_id).y, sample_gaussian_grads.m_third.y);
+                            atomicAdd(&grad_gm_centroids(gaussian_id).z, sample_gaussian_grads.m_third.z);
 
                             for (auto i = 0u; i < 6; ++i)
-                                atomicAdd(&grad_g_inverse_filtered_cov3d(gaussian_id)[i], grad_weight_rgb_pos_cov.m_fourth[i]);
+                                atomicAdd(&grad_g_inverse_filtered_cov3d(gaussian_id)[i], sample_gaussian_grads.m_fourth[i]);
+
+                            for (auto i = 0u; i < grad_bin_borders.size(); ++i) {
+                                grad_bin_borders[i] += sample_gaussian_grads.m_fifth[i];
+                            }
                         }
+                    }
+
+                    const auto grad_sample_sections = marching_steps::grad::sample<config::n_small_steps, config::n_steps_per_gaussian>(sample_sections, grad_bin_borders);
+
+                    for (auto i = 0u; i < grad_sample_sections.size(); ++i) {
+
+                        // const scalar_t g_start = gaussian1d.centre - sd * config::gaussian_relevance_sigma;
+                        // const scalar_t delta_t = (sd * config::gaussian_relevance_sigma * 2) / (config::n_steps_per_gaussian - 1);
+                        const auto grad_g_start = grad_sample_sections[i].g_start;
+                        const auto grad_delta_t = grad_sample_sections[i].delta_t;
+                        const auto g_id = grad_sample_sections[i].gaussian_id;
+                        const auto grad_1d_centre = grad_g_start;
+                        const auto grad_1d_sd = -config::gaussian_relevance_sigma * grad_g_start + (grad_delta_t * config::gaussian_relevance_sigma * 2) / (config::n_steps_per_gaussian - 1);
+
+                        const auto gaussian1d = gaussian::intersect_with_ray_inv_C(data.gm_centroids(g_id), g_inverse_filtered_cov3d(g_id), ray);
+                        // const auto sd = stroke::sqrt(gaussian1d.C);
+                        const auto grad_1d_C = stroke::grad::sqrt(gaussian1d.C, grad_1d_sd);
+
+                        const auto grad_gaussian1d = stroke::gaussian::ParamsWithWeight<1, scalar_t> { 0, grad_1d_centre, grad_1d_C };
+
+                        collected_centroid[thread_rank] = data.gm_centroids(g_id);
+                        collected_inv_cov3[thread_rank] = g_inverse_filtered_cov3d(g_id);
+                        collected_3d_masses[thread_rank] = g_filtered_masses(g_id);
+
+                        const auto grad_gaussian3d = stroke::grad::gaussian::intersect_with_ray_inv_C(data.gm_centroids(g_id), g_inverse_filtered_cov3d(g_id), ray, grad_gaussian1d);
+
+                        atomicAdd(&grad_gm_centroids(g_id).x, grad_gaussian3d.m_left.x);
+                        atomicAdd(&grad_gm_centroids(g_id).y, grad_gaussian3d.m_left.y);
+                        atomicAdd(&grad_gm_centroids(g_id).z, grad_gaussian3d.m_left.z);
+
+                        for (auto i = 0u; i < 6; ++i)
+                            atomicAdd(&grad_g_inverse_filtered_cov3d(g_id)[i], grad_gaussian3d.m_middle[i]);
                     }
 
                     done = done || sample_sections.size() == 0 || current_transparency < 1.f / 255.f;
