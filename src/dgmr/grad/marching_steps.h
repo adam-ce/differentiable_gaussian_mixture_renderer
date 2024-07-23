@@ -48,6 +48,9 @@ STROKE_DEVICES_INLINE DensityArray<n_density_sections, scalar_t> sample(const De
         return grad_densities;
 
     grad_densities.set_size(densities.size());
+    for (auto i = 0u; i < densities.size(); ++i) {
+        grad_densities[i].gaussian_id = densities[i].gaussian_id;
+    }
 
     whack::Array<scalar_t, n_samples> samples;
     unsigned current_density_index = 0;
