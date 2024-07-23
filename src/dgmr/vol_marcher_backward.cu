@@ -172,6 +172,10 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const whack::TensorView
                 while (large_stepping_ongoing) {
                     // Iterate over all gaussians and compute sample_sections
                     marching_steps::DensityArray<config::n_densities_per_batch, scalar_t> sample_sections(current_large_step_start);
+#ifdef DGMR_TORCH_GRAD_CHECK
+                    sample_sections.put({ 0, 26.0, 32.5, (32.5 - 26.0) / (config::n_steps_per_gaussian - 1) });
+                    sample_sections.put({ 0, 25.8, 34.3, (34.3 - 25.8) / (config::n_steps_per_gaussian - 1) });
+#else
                     n_toDo = render_g_range.y - render_g_range.x;
                     bool done_1 = !inside;
                     for (unsigned i = 0; i < n_rounds; i++, n_toDo -= render_block_size) {
@@ -226,6 +230,7 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const whack::TensorView
                             sample_sections.put({ collected_id[j], start, end, delta_t });
                         }
                     }
+#endif
 
                     // compute sampling
                     const auto bin_borders = marching_steps::sample<config::n_bins_per_batch, config::n_steps_per_gaussian>(sample_sections);
@@ -312,17 +317,18 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const whack::TensorView
                         }
                     }
 
+#ifndef DGMR_TORCH_GRAD_CHECK
+                    // only matters for small n_steps_per_gaussian
                     const auto grad_sample_sections = marching_steps::grad::sample<config::n_bins_per_batch, config::n_steps_per_gaussian>(sample_sections, grad_bin_borders);
-
                     for (auto i = 0u; i < grad_sample_sections.size(); ++i) {
 
                         // const scalar_t g_start = gaussian1d.centre - sd * config::gaussian_relevance_sigma;
                         // const scalar_t delta_t = (sd * config::gaussian_relevance_sigma * 2) / (config::n_steps_per_gaussian - 1);
-                        const auto grad_g_start = grad_sample_sections[i].g_start;
+                        const auto grad_start = grad_sample_sections[i].g_start;
                         const auto grad_delta_t = grad_sample_sections[i].delta_t;
                         const auto g_id = grad_sample_sections[i].gaussian_id;
-                        const auto grad_1d_centre = grad_g_start;
-                        const auto grad_1d_sd = -config::gaussian_relevance_sigma * grad_g_start + (grad_delta_t * config::gaussian_relevance_sigma * 2) / (config::n_steps_per_gaussian - 1);
+                        const auto grad_1d_centre = grad_start;
+                        const auto grad_1d_sd = -config::gaussian_relevance_sigma * grad_start + (grad_delta_t * config::gaussian_relevance_sigma * 2) / (config::n_steps_per_gaussian - 1);
 
                         const auto gaussian1d = gaussian::intersect_with_ray_inv_C(data.gm_centroids(g_id), g_inverse_filtered_cov3d(g_id), ray);
                         // const auto sd = stroke::sqrt(gaussian1d.C);
@@ -343,6 +349,7 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const whack::TensorView
                         for (auto i = 0u; i < 6; ++i)
                             atomicAdd(&grad_g_inverse_filtered_cov3d(g_id)[i], grad_gaussian3d.m_middle[i]);
                     }
+#endif
 
                     done = done || sample_sections.size() == 0 || current_transparency < 1.f / 255.f;
                     const int num_done = __syncthreads_count(done);
