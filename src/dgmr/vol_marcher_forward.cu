@@ -396,7 +396,7 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<sca
                             // mathematically the same as the following line, but numerically different:
                             // const scalar_t end = gaussian1d.centre + sd * config::gaussian_relevance_sigma;
 
-                            sample_sections.put({ collected_id[j], start, end, delta_t });
+                            sample_sections.put({ unsigned(collected_id[j]), start, end, delta_t });
 #ifdef DGMR_PRINT_G_DENSITIES
                             printf("bins start: %f, end: %f, delta_t: %f\n", float(start), float(end), float(delta_t));
 #endif
@@ -487,7 +487,10 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<sca
                     const int num_done = __syncthreads_count(done);
                     if (num_done == render_block_size)
                         break;
-                    current_large_step_start = bin_borders[bin_borders.size() - 1];
+                    if (done)
+                        continue;
+
+                    current_large_step_start = sample_sections[sample_sections.size() - 1].end;
                 }
 
                 if (!inside)

@@ -227,7 +227,7 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const whack::TensorView
                             // mathematically the same as the following line, but numerically different:
                             // const scalar_t end = gaussian1d.centre + sd * config::gaussian_relevance_sigma;
 
-                            sample_sections.put({ collected_id[j], start, end, delta_t });
+                            sample_sections.put({ unsigned(collected_id[j]), start, end, delta_t });
                         }
                     }
 #endif
@@ -355,7 +355,10 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const whack::TensorView
                     const int num_done = __syncthreads_count(done);
                     if (num_done == render_block_size)
                         break;
-                    current_large_step_start = bin_borders[bin_borders.size() - 1];
+                    if (done)
+                        continue;
+
+                    current_large_step_start = sample_sections[sample_sections.size() - 1].end;
                 }
             });
     }

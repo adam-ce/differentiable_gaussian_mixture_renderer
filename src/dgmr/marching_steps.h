@@ -18,16 +18,36 @@
 
 #pragma once
 
+#include <cstdint>
+#include <type_traits>
+
 #include <gcem.hpp>
 #include <stroke/scalar_functions.h>
 #include <stroke/utility.h>
 #include <whack/array.h>
 
 namespace dgmr::marching_steps {
+namespace detail {
+    template <typename scalar_t>
+    struct equivalent_uint_type;
+
+    template <>
+    struct equivalent_uint_type<float> {
+        using type = uint32_t;
+    };
+
+    template <>
+    struct equivalent_uint_type<double> {
+        using type = uint64_t;
+    };
+
+    template <typename scalar_t>
+    using equivalent_uint_type_t = typename equivalent_uint_type<scalar_t>::type; // for unit tests
+} // namespace detail
 
 template<typename scalar_t>
 struct DensityEntry {
-    int gaussian_id;
+    detail::equivalent_uint_type_t<scalar_t> gaussian_id;
     scalar_t start;
     scalar_t end;
     scalar_t delta_t;
@@ -35,7 +55,7 @@ struct DensityEntry {
 
     STROKE_DEVICES_INLINE DensityEntry() = default;
 
-    STROKE_DEVICES_INLINE DensityEntry(int gaussian_id, scalar_t start, scalar_t end, scalar_t delta_t)
+    STROKE_DEVICES_INLINE DensityEntry(unsigned gaussian_id, scalar_t start, scalar_t end, scalar_t delta_t)
         : gaussian_id(gaussian_id)
         , start(start)
         , end(end)
@@ -47,7 +67,8 @@ struct DensityEntry {
 
 template <unsigned max_size, typename scalar_t>
 class DensityArray {
-    unsigned m_size = 0;
+    using size_t = detail::equivalent_uint_type_t<scalar_t>;
+    size_t m_size = 0;
     whack::Array<DensityEntry<scalar_t>, max_size> m_data;
     scalar_t m_start;
     scalar_t m_end = scalar_t(1) / scalar_t(0);
@@ -107,11 +128,14 @@ public:
             tmp[0].end = stroke::min(a.end, b.start);
             tmp[0].delta_t = a.delta_t;
             tmp[0].g_start = a.g_start;
+            tmp[0].gaussian_id = a.gaussian_id;
+
         } else {
             tmp[0].start = b.start;
             tmp[0].end = stroke::min(b.end, a.start);
             tmp[0].delta_t = b.delta_t;
             tmp[0].g_start = b.g_start;
+            tmp[0].gaussian_id = b.gaussian_id;
         }
         if (b.end < a.end) {
             assert(a.start < b.end);
@@ -119,12 +143,14 @@ public:
             tmp[2].end = a.end;
             tmp[2].delta_t = a.delta_t;
             tmp[2].g_start = a.g_start;
+            tmp[2].gaussian_id = a.gaussian_id;
         } else {
             assert(b.start < a.end); // otherwise
             tmp[2].start = a.end; // stroke::max(a.end, b.start);
             tmp[2].end = b.end;
             tmp[2].delta_t = b.delta_t;
             tmp[2].g_start = b.g_start;
+            tmp[2].gaussian_id = b.gaussian_id;
         }
         // overlapping
         tmp[1].start = tmp[0].end;
@@ -132,17 +158,22 @@ public:
         if (a.delta_t < b.delta_t) {
             tmp[1].delta_t = a.delta_t;
             tmp[1].g_start = a.g_start;
+            tmp[1].gaussian_id = a.gaussian_id;
         }
         else {
             tmp[1].delta_t = b.delta_t;
             tmp[1].g_start = b.g_start;
+            tmp[1].gaussian_id = b.gaussian_id;
         }
         return tmp;
     }
 
     STROKE_DEVICES_INLINE void put(DensityEntry<scalar_t> entry)
     {
-        const auto find = [this](scalar_t v, unsigned find_from = 0u) {
+        const auto same_g = [](const DensityEntry<scalar_t>& a, const DensityEntry<scalar_t>& b) {
+            return a.delta_t == b.delta_t && a.g_start == b.g_start && a.gaussian_id == b.gaussian_id;
+        };
+        const auto find = [this](scalar_t v, size_t find_from = 0u) {
             for (auto i = find_from; i < m_size; ++i) {
                 const DensityEntry<scalar_t>& e = m_data[i];
                 if (e.end > v)
@@ -151,17 +182,17 @@ public:
             return m_size;
         };
 
-        const auto compact = [](whack::Array<DensityEntry<scalar_t>, 3> data) {
-            if (data[0].delta_t == data[1].delta_t) {
+        const auto compact = [same_g](whack::Array<DensityEntry<scalar_t>, 3> data) {
+            if (same_g(data[0], data[1])) {
                 data[1].start = data[0].start;
                 data[0].end = data[0].start;
             }
             return data;
         };
 
-        if (entry.end <= m_start)
+        if (entry.end <= m_start + scalar_t(0.015) * entry.delta_t)
             return;
-        if (entry.start >= m_end)
+        if (entry.start >= m_end - scalar_t(0.015) * entry.delta_t)
             return;
         entry.start = stroke::max(m_start, entry.start);
         entry.end = stroke::min(m_end, entry.end);
@@ -207,14 +238,14 @@ public:
             const auto new_entries = compact(combined);
             entry = new_entries[2];
             if (new_entries[0].end - new_entries[0].start <= 0) {
-                if (new_entries[1].delta_t == new_entries[2].delta_t) {
+                if (same_g(new_entries[1], new_entries[2])) {
                     entry.start = new_entries[1].start;
                     continue;
                 }
                 m_data[i_write++] = new_entries[1];
             } else {
                 m_data[i_write++] = new_entries[0];
-                if (new_entries[1].delta_t == new_entries[2].delta_t) {
+                if (same_g(new_entries[1], new_entries[2])) {
                     entry.start = new_entries[1].start;
                     continue;
                 }
@@ -256,23 +287,22 @@ STROKE_DEVICES_INLINE whack::Array<scalar_t, n_samples> sample(const DensityArra
 
     whack::Array<scalar_t, n_samples> samples;
     unsigned current_density_index = 0;
-    scalar_t last_sample = densities.start() - densities[0].delta_t / 2;
+    scalar_t last_sample = densities.start() - scalar_t(0.000001) - densities[0].delta_t / 2;
     for (auto i = 0u; i < samples.size(); ++i) {
-        auto sample = next_sample(densities[current_density_index], last_sample + densities[current_density_index].delta_t / 2);
+        const auto sample_t = last_sample + densities[current_density_index].delta_t / 2;
+        auto sample = next_sample(densities[current_density_index], sample_t);
         while (sample > densities[current_density_index].end) {
             ++current_density_index;
-            if (current_density_index >= densities.size())
-                break;
-            sample = next_sample(densities[current_density_index], densities[current_density_index].start);
+            if (current_density_index >= densities.size()) {
+                if (i == 0)
+                    last_sample = densities[densities.size() - 1].end;
+                for (; i < samples.size(); ++i)
+                    samples[i] = last_sample;
+                return samples;
+            }
+            const auto sample_t = densities[current_density_index].start - scalar_t(0.000001);
+            sample = next_sample(densities[current_density_index], sample_t);
         }
-        if (current_density_index >= densities.size()) {
-            assert(last_sample >= densities.start()); // no samples produced
-
-            for (; i < samples.size(); ++i)
-                samples[i] = last_sample;
-            break;
-        }
-        assert(sample >= densities.start()); // no samples produced
         samples[i] = sample;
         last_sample = sample;
     }

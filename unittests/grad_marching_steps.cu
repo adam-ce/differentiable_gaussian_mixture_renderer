@@ -74,9 +74,10 @@ TEST_CASE("dgmr grad marching steps next sample")
 TEST_CASE("dgmr grad marching steps sample")
 {
     using scalar_t = double;
-    using DensityArray = dgmr::marching_steps::DensityArray<8, scalar_t>;
-    constexpr auto n_samples = 6u;
-    constexpr auto n_samples_per_g = 4;
+    constexpr auto n_densities = 3;
+    using DensityArray = dgmr::marching_steps::DensityArray<n_densities, scalar_t>;
+    constexpr auto n_samples = 4u;
+    constexpr auto n_samples_per_g = 3;
 
     whack::random::HostGenerator<scalar_t> rnd;
 
@@ -89,16 +90,16 @@ TEST_CASE("dgmr grad marching steps sample")
         DensityArray arr(smallest);
         for (auto j = 0u; j < 50; ++j) {
             const auto start = r() * scalar_t(10.0);
-            const auto end = start + r();
+            const auto end = start + r() + scalar_t(0.2);
             arr.put({ 0, start, end, (end - start) / (n_samples_per_g - 1) });
 
             auto arr_prime = arr;
-            arr_prime.reset_non_differentiable_values(arr.size(), smallest + 0.0000015, arr.end());
+            arr_prime.reset_non_differentiable_values(arr.size(), smallest + 0.000002, arr.end());
             for (auto i = 0u; i < arr.size(); ++i) {
                 // arr_prime[i].start = stroke::min(arr[i].start, arr_prime[i].g_start);
                 // arr_prime[i].end = stroke::max(arr[i].end, arr_prime[i].g_start + n_samples_per_g * arr_prime[i].delta_t);
-                arr_prime[i].start = arr[i].start + 0.0000015;
-                arr_prime[i].end = arr[i].end - n_samples_per_g * 0.0000015;
+                arr_prime[i].start = arr[i].start + 0.000002;
+                arr_prime[i].end = arr[i].end - n_samples_per_g * 0.000002;
             }
 
             const auto fun = [=](const whack::Tensor<scalar_t, 1>& input) {
@@ -121,8 +122,12 @@ TEST_CASE("dgmr grad marching steps sample")
 
                 const auto grad_samples = stroke::extract<whack::Array<scalar_t, n_samples>>(grad_output);
 
-                const auto grad_densities = dgmr::marching_steps::grad::sample<n_samples, n_samples_per_g>(arr, grad_samples);
+                auto grad_densities = dgmr::marching_steps::grad::sample<n_samples, n_samples_per_g>(arr, grad_samples);
+                grad_densities.set_size(0);
 
+                static_assert(sizeof(grad_densities) == 3 * 8 + n_densities * 5 * 8);
+                static_assert(sizeof(scalar_t) == 8);
+                static_assert(sizeof(grad_densities) % sizeof(scalar_t) == 0);
                 return stroke::pack_tensor<scalar_t>(grad_densities);
             };
 

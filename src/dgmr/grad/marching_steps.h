@@ -52,34 +52,31 @@ STROKE_DEVICES_INLINE DensityArray<n_density_sections, scalar_t> sample(const De
         grad_densities[i].gaussian_id = densities[i].gaussian_id;
     }
 
-    whack::Array<scalar_t, n_samples> samples;
     unsigned current_density_index = 0;
-    scalar_t last_sample = densities.start() - densities[current_density_index].delta_t / 2;
-    scalar_t last_sample_t = last_sample + densities[current_density_index].delta_t / 2;
-    for (auto i = 0u; i < samples.size(); ++i) {
+    scalar_t last_sample = densities.start() - scalar_t(0.000001) - densities[0].delta_t / 2;
+    scalar_t last_sample_t = last_sample;
+    for (auto i = 0u; i < n_samples; ++i) {
         auto sample_t = last_sample + densities[current_density_index].delta_t / 2;
         auto sample = next_sample(densities[current_density_index], sample_t);
         while (sample > densities[current_density_index].end) {
             ++current_density_index;
-            if (current_density_index >= densities.size())
-                break;
-            sample_t = densities[current_density_index].start;
+            if (current_density_index >= densities.size()) {
+                if (i == 0)
+                    return grad_densities; // no samples produced -> no gradient
+
+                scalar_t total_grad = 0;
+                for (auto j = i; j < n_samples; ++j)
+                    total_grad += incoming_grad[j];
+
+                const auto tmp = grad::next_sample(densities[densities.size() - 1], last_sample_t, total_grad);
+                grad_densities[densities.size() - 1].g_start += tmp.g_start;
+                grad_densities[densities.size() - 1].delta_t += tmp.delta_t;
+                return grad_densities;
+            }
+            sample_t = densities[current_density_index].start - scalar_t(0.000001);
             sample = next_sample(densities[current_density_index], sample_t);
         }
-        if (current_density_index >= densities.size()) {
-            assert(sample >= densities.start()); // no samples produced
-
-            scalar_t total_grad = 0;
-            for (auto j = i; j < samples.size(); ++j)
-                total_grad += incoming_grad[j];
-
-            const auto tmp = grad::next_sample(densities[densities.size() - 1], last_sample_t, total_grad);
-            grad_densities[densities.size() - 1].g_start += tmp.g_start;
-            grad_densities[densities.size() - 1].delta_t += tmp.delta_t;
-            break;
-        }
         // samples[i] = sample;
-        assert(sample >= densities.start()); // no samples produced
 
         const auto tmp = grad::next_sample(densities[current_density_index], sample_t, incoming_grad[i]);
         grad_densities[current_density_index].g_start += tmp.g_start;

@@ -22,6 +22,7 @@
 #include <catch2/catch_template_test_macros.hpp>
 
 #include <dgmr/marching_steps.h>
+#include <tuple>
 
 using Catch::Approx;
 
@@ -65,6 +66,50 @@ TEST_CASE("dgmr marching step DensityArray sampler")
         for (auto i = 0u; i < samples.size(); ++i) {
             CHECK(samples[i] == 0);
         }
+    }
+
+    SECTION("one")
+    {
+        dgmr::marching_steps::DensityArray<8, float> arr(0.1f);
+        arr.put({ 0, 0.0f, 3.2f, 0.1f });
+
+        const auto samples = dgmr::marching_steps::sample<32, 32>(arr);
+        CHECK(samples[0] == Approx(0.1));
+        CHECK(samples[1] == Approx(0.2));
+        CHECK(samples[2] == Approx(0.3));
+        CHECK(samples[30] == Approx(3.1));
+        CHECK(samples[31] == Approx(3.2));
+    }
+
+    SECTION("widerspenstiga one")
+    {
+        dgmr::marching_steps::DensityArray<8, float> arr(4.671081f);
+        arr.put({ 0, 4.081620f, 4.081620f + 0.294730f * 4, 0.294730f });
+        arr.put({ 1, 4.138420f, 4.138420f + 0.323602f * 4, 0.323602f });
+
+        const auto samples = dgmr::marching_steps::sample<32, 4>(arr);
+        CHECK(samples[0] == Approx(4.671081));
+        CHECK(samples[1] == Approx(4.081620f + 0.294730f * 3));
+        CHECK(samples[2] == Approx(4.081620f + 0.294730f * 4));
+        CHECK(samples[3] == Approx(4.138420f + 0.323602f * 4));
+        CHECK(samples[4] == Approx(4.138420f + 0.323602f * 4));
+        CHECK(samples[30] == Approx(4.138420f + 0.323602f * 4));
+        CHECK(samples[31] == Approx(4.138420f + 0.323602f * 4));
+    }
+
+    SECTION("nu a widerspenstiga one")
+    {
+        dgmr::marching_steps::DensityArray<8, float> arr(4.412080f);
+        arr.put({ 0, 4.412080f, 4.412080f + 0.131250f * 4, 0.131250f });
+
+        const auto samples = dgmr::marching_steps::sample<32, 4>(arr);
+        CHECK(samples[0] == Approx(4.412080));
+        CHECK(samples[1] == Approx(4.412080f + 0.131250f * 1));
+        CHECK(samples[2] == Approx(4.412080f + 0.131250f * 2));
+        CHECK(samples[3] == Approx(4.412080f + 0.131250f * 3));
+        CHECK(samples[4] == Approx(4.412080f + 0.131250f * 4));
+        CHECK(samples[30] == Approx(4.412080f + 0.131250f * 4));
+        CHECK(samples[31] == Approx(4.412080f + 0.131250f * 4));
     }
 
     SECTION("filled")
@@ -990,6 +1035,7 @@ TEMPLATE_TEST_CASE("dgmr marching step DensityArray", "", float, double)
 
     SECTION("randomised")
     {
+        using GaussianId = dgmr::marching_steps::detail::equivalent_uint_type_t<scalar_t>;
         std::srand(0);
         const auto r = []() {
             return scalar_t(std::rand()) / scalar_t(RAND_MAX);
@@ -1002,23 +1048,25 @@ TEMPLATE_TEST_CASE("dgmr marching step DensityArray", "", float, double)
             const auto get_real_g_at = [&](scalar_t t) {
                 auto delta_t = scalar_t(1) / scalar_t(0);
                 auto g_start = scalar_t(0);
+                GaussianId g_id = 0u;
                 for (const auto& e : entries) {
                     if (e.start <= t && t < e.end && e.delta_t < delta_t) {
                         delta_t = e.delta_t;
                         g_start = e.g_start;
+                        g_id = e.gaussian_id;
                     }
                 }
-                return std::make_pair(g_start, delta_t);
+                return std::make_tuple(g_id, g_start, delta_t);
             };
 
             const auto get_computed_g_at = [&](scalar_t t) {
                 for (auto i = 0u; i < arr.size(); ++i) {
                     const auto& e = arr[i];
                     if (e.start <= t && t < e.end) {
-                        return std::make_pair(e.g_start, e.delta_t);
+                        return std::make_tuple(e.gaussian_id, e.g_start, e.delta_t);
                     }
                 }
-                return std::make_pair(scalar_t(0), scalar_t(1) / scalar_t(0));
+                return std::make_tuple(GaussianId(0), scalar_t(0), scalar_t(1) / scalar_t(0));
             };
 
             for (auto j = 0u; j < 100; ++j) {
@@ -1026,7 +1074,7 @@ TEMPLATE_TEST_CASE("dgmr marching step DensityArray", "", float, double)
                     printf(".\n");
                 const auto start = r() * 10.0f;
                 const auto end = start + r();
-                entries.push_back({ 0, start, end, r() });
+                entries.push_back({ j, start, end, (end - start) / 31 });
                 arr.put(entries.back());
                 if (arr.size()) {
                     CHECK(arr[0].start >= smallest);
@@ -1050,8 +1098,9 @@ TEMPLATE_TEST_CASE("dgmr marching step DensityArray", "", float, double)
                     const auto r = get_real_g_at(t);
                     const auto c = get_computed_g_at(t);
                     // if (c != r)
-                    CHECK(c.first == r.first);
-                    CHECK(c.second == r.second);
+                    CHECK(std::get<0>(c) == std::get<0>(r));
+                    CHECK(std::get<1>(c) == std::get<1>(r));
+                    CHECK(std::get<2>(c) == std::get<2>(r));
                 }
             }
         }
