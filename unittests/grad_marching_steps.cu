@@ -74,10 +74,10 @@ TEST_CASE("dgmr grad marching steps next sample")
 TEST_CASE("dgmr grad marching steps sample")
 {
     using scalar_t = double;
-    constexpr auto n_densities = 3;
+    constexpr auto n_densities = 16;
     using DensityArray = dgmr::marching_steps::DensityArray<n_densities, scalar_t>;
-    constexpr auto n_samples = 4u;
-    constexpr auto n_samples_per_g = 3;
+    constexpr auto n_samples = 16u;
+    constexpr auto n_samples_per_g = 32;
 
     whack::random::HostGenerator<scalar_t> rnd;
 
@@ -88,7 +88,7 @@ TEST_CASE("dgmr grad marching steps sample")
     for (auto i = 0u; i < 4; ++i) {
         const auto smallest = r();
         DensityArray arr(smallest);
-        for (auto j = 0u; j < 50; ++j) {
+        for (auto j = 0u; j < 100; ++j) {
             const auto start = r() * scalar_t(10.0);
             const auto end = start + r() + scalar_t(0.2);
             arr.put({ 0, start, end, (end - start) / (n_samples_per_g - 1) });
@@ -132,7 +132,7 @@ TEST_CASE("dgmr grad marching steps sample")
             };
 
             const auto test_data = stroke::pack_tensor<scalar_t>(arr_prime);
-            stroke::check_gradient(fun, fun_grad, test_data, scalar_t(0.000001));
+            stroke::check_gradient(fun, fun_grad, test_data, scalar_t(0.0000001));
         }
     }
 }

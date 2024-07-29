@@ -53,6 +53,7 @@ STROKE_DEVICES_INLINE DensityArray<n_density_sections, scalar_t> sample(const De
     }
 
     unsigned current_density_index = 0;
+    unsigned last_sample_density_index = 0;
     scalar_t last_sample = densities.start() - scalar_t(0.000001) - densities[0].delta_t / 2;
     scalar_t last_sample_t = last_sample;
     for (auto i = 0u; i < n_samples; ++i) {
@@ -68,9 +69,9 @@ STROKE_DEVICES_INLINE DensityArray<n_density_sections, scalar_t> sample(const De
                 for (auto j = i; j < n_samples; ++j)
                     total_grad += incoming_grad[j];
 
-                const auto tmp = grad::next_sample(densities[densities.size() - 1], last_sample_t, total_grad);
-                grad_densities[densities.size() - 1].g_start += tmp.g_start;
-                grad_densities[densities.size() - 1].delta_t += tmp.delta_t;
+                const auto tmp = grad::next_sample(densities[last_sample_density_index], last_sample_t, total_grad);
+                grad_densities[last_sample_density_index].g_start += tmp.g_start;
+                grad_densities[last_sample_density_index].delta_t += tmp.delta_t;
                 return grad_densities;
             }
             sample_t = densities[current_density_index].start - scalar_t(0.000001);
@@ -83,6 +84,7 @@ STROKE_DEVICES_INLINE DensityArray<n_density_sections, scalar_t> sample(const De
         grad_densities[current_density_index].delta_t += tmp.delta_t;
         last_sample = sample;
         last_sample_t = sample_t;
+        last_sample_density_index = current_density_index;
     }
 
     return grad_densities;
