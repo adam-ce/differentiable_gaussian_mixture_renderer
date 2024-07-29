@@ -172,7 +172,8 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const whack::TensorView
                 while (large_stepping_ongoing) {
                     // Iterate over all gaussians and compute sample_sections
                     marching_steps::DensityArray<config::n_densities_per_batch, scalar_t> sample_sections(current_large_step_start);
-#ifdef DGMR_TORCH_GRAD_CHECK
+#ifdef DGMR_TORCH_GRAD_CHECK_CONST_SAMPLES
+                    // see vol_marcher_forward.cu
                     sample_sections.put({ 0, 26.0, 32.5, (32.5 - 26.0) / (config::n_steps_per_gaussian - 1) });
                     sample_sections.put({ 0, 25.8, 34.3, (34.3 - 25.8) / (config::n_steps_per_gaussian - 1) });
 #else
@@ -317,8 +318,7 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const whack::TensorView
                         }
                     }
 
-#ifndef DGMR_TORCH_GRAD_CHECK
-                    // only matters for small n_steps_per_gaussian
+#ifdef DGMR_ATTACHED_GRADIENT
                     const auto grad_sample_sections = marching_steps::grad::sample<config::n_bins_per_batch, config::n_steps_per_gaussian>(sample_sections, grad_bin_borders);
                     for (auto i = 0u; i < grad_sample_sections.size(); ++i) {
 

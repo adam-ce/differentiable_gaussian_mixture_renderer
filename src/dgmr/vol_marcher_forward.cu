@@ -337,11 +337,11 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<sca
                 while (large_stepping_ongoing) {
                     // Iterate over all gaussians and compute sample_sections
                     marching_steps::DensityArray<config::n_densities_per_batch, scalar_t> sample_sections(current_large_step_start);
-#ifdef DGMR_TORCH_GRAD_CHECK
+#ifdef DGMR_TORCH_GRAD_CHECK_CONST_SAMPLES
                     // if you want to check the gradient without sampling, first run in forward with DGMR_PRINT_G_DENSITIES enabled
                     // and then add the Gaussians manually here. That will fix the sampling positions when computing the numerical gradient
                     // with the central difference method.
-                    // define DGMR_TORCH_GRAD_CHECK in a place, such that it's also seen in vol_marcher_backward.cu!
+                    // define DGMR_TORCH_GRAD_CHECK_CONST_SAMPLES in a place, such that it's also seen in vol_marcher_backward.cu!
                     sample_sections.put({ 0, 26.0, 32.5, (32.5 - 26.0) / (config::n_steps_per_gaussian - 1) });
                     sample_sections.put({ 0, 25.8, 34.3, (34.3 - 25.8) / (config::n_steps_per_gaussian - 1) });
 #else
