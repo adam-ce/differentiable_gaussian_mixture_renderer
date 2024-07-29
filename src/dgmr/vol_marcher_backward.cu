@@ -358,7 +358,7 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const whack::TensorView
                     if (done)
                         continue;
 
-                    current_large_step_start = sample_sections[sample_sections.size() - 1].end;
+                    current_large_step_start = bin_borders[bin_borders.size() - 1];
                 }
             });
     }
