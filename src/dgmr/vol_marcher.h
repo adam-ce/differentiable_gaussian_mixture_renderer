@@ -22,6 +22,8 @@
 #include <glm/glm.hpp>
 #include <whack/TensorView.h>
 
+// #define DGMR_TORCH_GRAD_CHECK_CONST_SAMPLES
+
 namespace dgmr::vol_marcher {
 
 template<typename scalar_t>
