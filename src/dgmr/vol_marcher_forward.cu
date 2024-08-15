@@ -304,9 +304,9 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<sca
                 // Identify current tile and associated min/max pixel range.
                 const glm::uvec2 pix_min = { whack_blockIdx.x * whack_blockDim.x, whack_blockIdx.y * whack_blockDim.y };
                 const glm::uvec2 pix_max = min(pix_min + glm::uvec2(whack_blockDim.x, whack_blockDim.y), glm::uvec2(fb_width, fb_height));
-                const glm::uvec2 pix = pix_min + glm::uvec2(whack_threadIdx.x, whack_threadIdx.y);
-                const Vec2 pix_ndc = Vec2(pix * glm::uvec2(2)) / Vec2(fb_width, fb_height) - Vec2(1);
-                auto view_at_world = inversed_projectin_matrix * Vec4(pix_ndc, -1, 1.0);
+                const Vec2 pix = Vec2(pix_min + glm::uvec2(whack_threadIdx.x, whack_threadIdx.y)) + Vec2(0.5, 0.5);
+                const Vec2 pix_ndc = Vec2(pix * Vec2(2)) / Vec2(fb_width, fb_height) - Vec2(1);
+                auto view_at_world = inversed_projectin_matrix * Vec4(pix_ndc, 0, 1.0);
                 view_at_world /= view_at_world.w;
 
                 const auto ray = stroke::Ray<3, scalar_t> { data.cam_poition, glm::normalize(Vec3(view_at_world) - data.cam_poition) };
