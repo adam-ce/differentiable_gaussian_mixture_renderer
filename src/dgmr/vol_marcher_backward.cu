@@ -173,8 +173,8 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const whack::TensorView
                     marching_steps::DensityArray<config::n_large_steps, scalar_t> sample_sections(current_large_step_start);
 #ifdef DGMR_TORCH_GRAD_CHECK_CONST_SAMPLES
                     // see vol_marcher_forward.cu
-                    sample_sections.put({ 26.0, 32.5, (32.5 - 26.0) / (config::n_steps_per_gaussian - 1) });
-                    sample_sections.put({ 25.8, 34.3, (34.3 - 25.8) / (config::n_steps_per_gaussian - 1) });
+                    sample_sections.put({ 28.0, 30.0, (30.0 - 28.0) / (config::n_steps_per_gaussian - 1) });
+                    sample_sections.put({ 30.0, 32.0, (32.0 - 30.0) / (config::n_steps_per_gaussian - 1) });
 #else
                     n_toDo = render_g_range.y - render_g_range.x;
                     bool done_1 = !inside;

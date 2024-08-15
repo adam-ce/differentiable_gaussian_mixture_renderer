@@ -342,8 +342,8 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<sca
                     // and then add the Gaussians manually here. That will fix the sampling positions when computing the numerical gradient
                     // with the central difference method.
                     // define DGMR_TORCH_GRDA_CHECK_CONST_SAMPLES in a place, such that it's also seen in vol_marcher_backward.cu!
-                    sample_sections.put({ 26.0, 32.5, (32.5 - 26.0) / (config::n_steps_per_gaussian - 1) });
-                    sample_sections.put({ 25.8, 34.3, (34.3 - 25.8) / (config::n_steps_per_gaussian - 1) });
+                    sample_sections.put({ 28.0, 30.0, (30.0 - 28.0) / (config::n_steps_per_gaussian - 1) });
+                    sample_sections.put({ 30.0, 32.0, (32.0 - 30.0) / (config::n_steps_per_gaussian - 1) });
 #else
                     n_toDo = render_g_range.y - render_g_range.x;
                     bool done_1 = !inside;

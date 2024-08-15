@@ -23,6 +23,7 @@
 #include <whack/TensorView.h>
 
 // #define DGMR_TORCH_GRAD_CHECK_CONST_SAMPLES
+// #define DGMR_PRINT_G_DENSITIES
 
 namespace dgmr::vol_marcher {
 
