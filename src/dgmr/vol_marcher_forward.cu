@@ -128,8 +128,7 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<sca
                 // low pass filter to combat aliasing
                 const auto filter_kernel_size = dist * aa_distance_multiplier;
                 const auto filtered_cov_3d = cov3d + Cov3(filter_kernel_size * filter_kernel_size);
-                const auto filtered_scales = scales + Vec3(filter_kernel_size * filter_kernel_size);
-                const auto mass = math::weight_to_mass<vol_marcher::config::gaussian_mixture_formulation>(weight, filtered_scales);
+                const auto mass = math::weight_to_mass<vol_marcher::config::gaussian_mixture_formulation>(weight, scales);
                 if (mass <= 0)
                     return; // clipped
 

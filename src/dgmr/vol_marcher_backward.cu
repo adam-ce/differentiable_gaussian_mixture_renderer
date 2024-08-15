@@ -345,8 +345,7 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const whack::TensorView
                 const auto filter_kernel_size = dist * aa_distance_multiplier;
                 const auto filter_kernel_size_sq = filter_kernel_size * filter_kernel_size;
                 const auto filtered_cov_3d = cov3d + Cov3(filter_kernel_size_sq);
-                const auto filtered_scales = scales + Vec3(filter_kernel_size_sq);
-                const auto mass = math::weight_to_mass<vol_marcher::config::gaussian_mixture_formulation>(weight, filtered_scales);
+                const auto mass = math::weight_to_mass<vol_marcher::config::gaussian_mixture_formulation>(weight, scales);
                 if (mass <= 0)
                     return; // clipped
 
@@ -360,11 +359,9 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const whack::TensorView
 
                 const auto grad_filtered_cov_3d = stroke::grad::inverse(filtered_cov_3d, grad_g_inverse_filtered_cov3d(idx));
                 const auto grad_mass = grad_g_filtered_masses(idx);
-                const auto [grad_weight, grad_filtered_scales] = math::grad::weight_to_mass<vol_marcher::config::gaussian_mixture_formulation>(weight, filtered_scales, grad_mass);
-                auto grad_scales = grad_filtered_scales;
-                auto grad_filter_kernel_size_sq = sum(grad_filtered_scales);
+                auto [grad_weight, grad_scales] = math::grad::weight_to_mass<vol_marcher::config::gaussian_mixture_formulation>(weight, scales, grad_mass);
                 const auto grad_cov3d = grad_filtered_cov_3d;
-                grad_filter_kernel_size_sq += grad_filtered_cov_3d[0] + grad_filtered_cov_3d[3] + grad_filtered_cov_3d[5];
+                const auto grad_filter_kernel_size_sq = grad_filtered_cov_3d[0] + grad_filtered_cov_3d[3] + grad_filtered_cov_3d[5];
                 const auto grad_filter_kernel_size = grad_filter_kernel_size_sq * 2 * filter_kernel_size;
                 grad_dist += grad_filter_kernel_size * aa_distance_multiplier;
                 Quat grad_rotation = { 0, 0, 0, 0 };
