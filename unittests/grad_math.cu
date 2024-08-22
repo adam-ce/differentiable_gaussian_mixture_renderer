@@ -69,6 +69,7 @@ void check_weight_to_mass()
 {
     using scalar_t = double;
     using vec3_t = glm::vec<3, scalar_t>;
+    using cov2_t = stroke::Cov2<scalar_t>;
     using cov3_t = stroke::Cov3<scalar_t>;
     using quat_t = glm::qua<scalar_t>;
 
@@ -76,19 +77,19 @@ void check_weight_to_mass()
 
     for (int i = 0; i < 10; ++i) {
         const auto fun = [](const whack::Tensor<scalar_t, 1>& input) {
-            const auto [weight, scales] = stroke::extract<scalar_t, vec3_t>(input);
-            scalar_t g = weight_to_mass<formulation, scalar_t>(weight, scales);
+            const auto [weight, scales, cov2] = stroke::extract<scalar_t, vec3_t, cov2_t>(input);
+            scalar_t g = weight_to_mass<formulation, scalar_t>(weight, scales, cov2);
             return stroke::pack_tensor<scalar_t>(g);
         };
 
         const auto fun_grad = [](const whack::Tensor<scalar_t, 1>& input, const whack::Tensor<scalar_t, 1>& grad_output) {
-            const auto [weight, scales] = stroke::extract<scalar_t, vec3_t>(input);
+            const auto [weight, scales, cov2] = stroke::extract<scalar_t, vec3_t, cov2_t>(input);
             const scalar_t grad_incoming = stroke::extract<scalar_t>(grad_output);
-            const auto grad_outgoing = grad::weight_to_mass<formulation, scalar_t>(weight, scales, grad_incoming);
+            const auto grad_outgoing = grad::weight_to_mass<formulation, scalar_t>(weight, scales, cov2, grad_incoming);
             return stroke::pack_tensor<scalar_t>(grad_outgoing);
         };
 
-        const auto test_data = stroke::pack_tensor<scalar_t>(rnd.uniform() * 20.0, rnd.uniform3() * 20.0);
+        const auto test_data = stroke::pack_tensor<scalar_t>(rnd.uniform() * 20.0, rnd.uniform3() * 20.0, stroke::host_random_cov<2, scalar_t>(&rnd));
         stroke::check_gradient(fun, fun_grad, test_data, scalar_t(0.000002));
     }
 }
@@ -472,6 +473,10 @@ TEST_CASE("dgmr splat gradient (formulation: Ols, filter kernel size: 0.3)")
     check_splat<dgmr::Formulation::Ols>(0.3);
 }
 
+TEST_CASE("dgmr weight_to_mass gradient (formulation: Opacity)")
+{
+    check_weight_to_mass<dgmr::Formulation::Opacity>();
+}
 TEST_CASE("dgmr weight_to_mass gradient (formulation: Mass)")
 {
     check_weight_to_mass<dgmr::Formulation::Mass>();

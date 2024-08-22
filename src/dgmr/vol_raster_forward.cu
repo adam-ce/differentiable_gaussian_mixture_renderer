@@ -110,7 +110,7 @@ dgmr::VolRasterStatistics dgmr::vol_raster_forward(VolRasterForwardData& data)
                 // low pass filter to combat aliasing
                 const auto filter_kernel_size = glm::distance(centroid, data.cam_poition) * aa_distance_multiplier;
                 const auto filtered_cov_3d = cov3d + stroke::Cov3_f(filter_kernel_size * filter_kernel_size);
-                g_filtered_masses(idx) = math::weight_to_mass<vol_raster::config::gaussian_mixture_formulation>(weights, scales + glm::vec3(filter_kernel_size * filter_kernel_size));
+                g_filtered_masses(idx) = math::weight_to_mass<vol_raster::config::gaussian_mixture_formulation>(weights, scales + glm::vec3(filter_kernel_size * filter_kernel_size), screen_space_gaussian.cov);
 
                 // using the more aggressive computation for calculating overlapping tiles:
                 {

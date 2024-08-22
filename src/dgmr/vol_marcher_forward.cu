@@ -45,6 +45,7 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<sca
     using Vec2 = glm::vec<2, scalar_t>;
     using Vec3 = glm::vec<3, scalar_t>;
     using Vec4 = glm::vec<4, scalar_t>;
+    using Mat3 = glm::mat<3, 3, scalar_t>;
     using Mat4 = glm::mat<4, 4, scalar_t>;
     using Cov3 = stroke::Cov3<scalar_t>;
 
@@ -99,6 +100,9 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<sca
         math::Camera<scalar_t> camera {
             data.view_matrix, data.proj_matrix, focal_x, focal_y, data.tan_fovx, data.tan_fovy, fb_width, fb_height
         };
+        math::Camera<scalar_t> camera2 {
+            data.view_matrix, data.proj_matrix, 2.0, 2.0, data.tan_fovx, data.tan_fovy, fb_width, fb_height
+        };
 
         const dim3 block_dim = { 128 };
         const dim3 grid_dim = whack::grid_dim_from_total_size({ data.gm_weights.template size<0>() }, block_dim);
@@ -128,7 +132,7 @@ dgmr::vol_marcher::ForwardCache dgmr::vol_marcher::forward(whack::TensorView<sca
                 // low pass filter to combat aliasing
                 const auto filter_kernel_size = dist * aa_distance_multiplier;
                 const auto filtered_cov_3d = cov3d + Cov3(filter_kernel_size * filter_kernel_size);
-                const auto mass = math::weight_to_mass<vol_marcher::config::gaussian_mixture_formulation>(weight, scales);
+                const auto mass = math::weight_to_mass<vol_marcher::config::gaussian_mixture_formulation>(weight, scales, math::affine_transform_and_cut(cov3d, Mat3(camera.view_matrix)));
                 if (mass <= 0)
                     return; // clipped
 

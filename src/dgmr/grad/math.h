@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <stroke/gaussian.h>
 #include <stroke/grad/gaussian.h>
 #include <stroke/grad/linalg.h>
 #include <stroke/grad/quaternions.h>
@@ -281,17 +282,20 @@ sh_to_colour(const SHs<3, scalar_t>& sh, int deg, const glm::vec<3, scalar_t>& d
 }
 
 template <dgmr::Formulation formulation, typename scalar_t>
-STROKE_DEVICES_INLINE stroke::grad::TwoGrads<scalar_t, glm::vec<3, scalar_t>>
-weight_to_mass(scalar_t weight, const glm::vec<3, scalar_t>& cov3d_scale, const scalar_t& incoming_grad)
+STROKE_DEVICES_INLINE stroke::grad::ThreeGrads<scalar_t, glm::vec<3, scalar_t>, stroke::Cov2<scalar_t>>
+weight_to_mass(scalar_t weight, const glm::vec<3, scalar_t>& cov3d_scale, const stroke::Cov2<scalar_t>& cov2d, const scalar_t& incoming_grad)
 {
     switch (formulation) {
     case Formulation::Opacity: {
-        assert(false);
-        return {};
+        // return weight * stroke::gaussian::integrate_exponential(cov2d);
+        const auto i2 = stroke::gaussian::integrate_exponential(cov2d);
+        const auto grad_i2 = incoming_grad * weight;
+        const auto grad_cov2d = stroke::grad::gaussian::integrate_exponential(cov2d, grad_i2);
+        return { incoming_grad * i2, {}, grad_cov2d };
     }
     case Formulation::Mass: {
         return {
-            incoming_grad, {}
+            incoming_grad, {}, {}
         };
     }
     case Formulation::Density: {
@@ -299,7 +303,7 @@ weight_to_mass(scalar_t weight, const glm::vec<3, scalar_t>& cov3d_scale, const 
         // return weight * intgrl;
         const auto grad_intgrl = incoming_grad * weight;
         const auto grad_cov3d_scale = grad::integrate_exponential<scalar_t>(cov3d_scale, grad_intgrl);
-        return { incoming_grad * intgrl, grad_cov3d_scale };
+        return { incoming_grad * intgrl, grad_cov3d_scale, {} };
     }
     case Formulation::Ots: {
         const auto l2 = math::larger2(cov3d_scale);
@@ -308,7 +312,7 @@ weight_to_mass(scalar_t weight, const glm::vec<3, scalar_t>& cov3d_scale, const 
         const auto grad_i2prime = incoming_grad * weight;
         const auto grad_l2 = grad::integrate_exponential<scalar_t>(l2, grad_i2prime);
         const auto grad_cov3d_scale = grad::larger2<scalar_t>(cov3d_scale, grad_l2);
-        return { incoming_grad * i2prime, grad_cov3d_scale };
+        return { incoming_grad * i2prime, grad_cov3d_scale, {} };
     }
     case Formulation::Ols: {
         // const auto i2prime = math::integrate_exponential(smaller2(cov3d_scale));
@@ -320,7 +324,7 @@ weight_to_mass(scalar_t weight, const glm::vec<3, scalar_t>& cov3d_scale, const 
         const auto grad_i2prime = incoming_grad * weight;
         const auto grad_l2 = grad::integrate_exponential<scalar_t>(s2, grad_i2prime);
         const auto grad_cov3d_scale = grad::smaller2<scalar_t>(cov3d_scale, grad_l2);
-        return { incoming_grad * i2prime, grad_cov3d_scale };
+        return { incoming_grad * i2prime, grad_cov3d_scale, {} };
     }
     }
     return {};

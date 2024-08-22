@@ -63,7 +63,7 @@ struct config {
     static constexpr unsigned n_steps_per_gaussian = 32;
     static constexpr float transmission_threshold = 0.005f;
     static constexpr float gaussian_relevance_sigma = 3.f;
-    static constexpr Formulation gaussian_mixture_formulation = Formulation::Ots;
+    static constexpr Formulation gaussian_mixture_formulation = Formulation::Opacity;
 };
 
 } // namespace dgmr::vol_marcher

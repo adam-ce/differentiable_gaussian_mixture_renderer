@@ -296,12 +296,11 @@ STROKE_DEVICES_INLINE scalar_t weight_to_density(scalar_t weight, const glm::vec
 }
 
 template <Formulation formulation, typename scalar_t>
-STROKE_DEVICES_INLINE scalar_t weight_to_mass(scalar_t weight, const glm::vec<3, scalar_t>& cov3d_scale)
+STROKE_DEVICES_INLINE scalar_t weight_to_mass(scalar_t weight, const glm::vec<3, scalar_t>& cov3d_scale, const stroke::Cov2<scalar_t>& cov2d)
 {
     switch (formulation) {
     case Formulation::Opacity: {
-        assert(false);
-        return 0;
+        return weight * stroke::gaussian::integrate_exponential(cov2d);
     }
     case Formulation::Mass: {
         return weight;

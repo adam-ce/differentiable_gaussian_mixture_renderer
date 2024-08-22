@@ -56,6 +56,7 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const whack::TensorView
     using Vec2 = glm::vec<2, scalar_t>;
     using Vec3 = glm::vec<3, scalar_t>;
     using Vec4 = glm::vec<4, scalar_t>;
+    using Mat3 = glm::mat<3, 3, scalar_t>;
     using Mat4 = glm::mat<4, 4, scalar_t>;
     using Cov3 = stroke::Cov3<scalar_t>;
     using Quat = glm::qua<scalar_t>;
@@ -319,6 +320,9 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const whack::TensorView
 
     // preprocess, run per Gaussian
     {
+        math::Camera<scalar_t> camera {
+            data.view_matrix, data.proj_matrix, focal_x, focal_y, data.tan_fovx, data.tan_fovy, fb_width, fb_height
+        };
         const dim3 block_dim = { 128 };
         const dim3 grid_dim = whack::grid_dim_from_total_size({ data.gm_weights.template size<0>() }, block_dim);
         whack::start_parallel(
@@ -345,7 +349,8 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const whack::TensorView
                 const auto filter_kernel_size = dist * aa_distance_multiplier;
                 const auto filter_kernel_size_sq = filter_kernel_size * filter_kernel_size;
                 const auto filtered_cov_3d = cov3d + Cov3(filter_kernel_size_sq);
-                const auto mass = math::weight_to_mass<vol_marcher::config::gaussian_mixture_formulation>(weight, scales);
+                const auto cov2d = math::affine_transform_and_cut(cov3d, Mat3(camera.view_matrix));
+                const auto mass = math::weight_to_mass<vol_marcher::config::gaussian_mixture_formulation>(weight, scales, cov2d);
                 if (mass <= 0)
                     return; // clipped
 
@@ -359,12 +364,15 @@ dgmr::vol_marcher::Gradients dgmr::vol_marcher::backward(const whack::TensorView
 
                 const auto grad_filtered_cov_3d = stroke::grad::inverse(filtered_cov_3d, grad_g_inverse_filtered_cov3d(idx));
                 const auto grad_mass = grad_g_filtered_masses(idx);
-                auto [grad_weight, grad_scales] = math::grad::weight_to_mass<vol_marcher::config::gaussian_mixture_formulation>(weight, scales, grad_mass);
-                const auto grad_cov3d = grad_filtered_cov_3d;
+                auto [grad_weight, grad_scales, grad_cov2d] = math::grad::weight_to_mass<vol_marcher::config::gaussian_mixture_formulation>(weight, scales, cov2d, grad_mass);
+
+                auto grad_cov3d = grad_filtered_cov_3d;
                 const auto grad_filter_kernel_size_sq = grad_filtered_cov_3d[0] + grad_filtered_cov_3d[3] + grad_filtered_cov_3d[5];
                 const auto grad_filter_kernel_size = grad_filter_kernel_size_sq * 2 * filter_kernel_size;
                 grad_dist += grad_filter_kernel_size * aa_distance_multiplier;
                 Quat grad_rotation = { 0, 0, 0, 0 };
+                math::grad::affine_transform_and_cut(cov3d, Mat3(camera.view_matrix), grad_cov2d).addTo(&grad_cov3d, stroke::grad::Ignore::Grad);
+
                 math::grad::compute_cov(scales, rotation, grad_cov3d).addTo(&grad_scales, &grad_rotation);
                 grad_centroid += stroke::grad::length(centroid - data.cam_poition, grad_dist);
 
